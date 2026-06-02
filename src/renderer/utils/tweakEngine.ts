@@ -1,0 +1,272 @@
+export interface Tweak {
+  id: string;
+  name: string;
+  description: string;
+  category: "free" | "premium";
+  commands: string[];
+  registryCommands?: string[];
+  powershellCommands?: string[];
+  serviceCommands?: string[];
+}
+
+export const FREE_TWEAKS: Tweak[] = [
+  {
+    id: "disable-gamebar",
+    name: "Désactivation Xbox Game Bar",
+    description: "Désactive la Xbox Game Bar qui consomme des ressources inutiles en jeu.",
+    category: "free",
+    commands: [],
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR" /v AppCaptureEnabled /t REG_DWORD /d 0 /f',
+      'reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" /v AllowGameDVR /t REG_DWORD /d 0 /f',
+    ],
+  },
+  {
+    id: "high-performance",
+    name: "Mode Haute Performance",
+    description: "Active le mode d'alimentation Haute Performance pour des performances maximales.",
+    category: "free",
+    commands: ["powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"],
+  },
+  {
+    id: "disable-notifications",
+    name: "Désactivation Notifications",
+    description: "Désactive les notifications Windows pendant les sessions de jeu.",
+    category: "free",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications" /v ToastEnabled /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "clean-temp",
+    name: "Nettoyage Fichiers Temporaires",
+    description: "Supprime les fichiers temporaires pour libérer de l'espace et améliorer les temps de chargement.",
+    category: "free",
+    commands: [
+      'del /q /f /s "%TEMP%\\*"',
+      'del /q /f /s "C:\\Windows\\Temp\\*"',
+    ],
+  },
+  {
+    id: "disable-gamedvr",
+    name: "Désactivation Game DVR",
+    description: "Désactive l'enregistrement automatique Game DVR qui impacte les FPS.",
+    category: "free",
+    registryCommands: [
+      'reg add "HKCU\\System\\GameConfigStore" /v GameDVR_Enabled /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\System\\GameConfigStore" /v GameDVR_FSEBehaviorMode /t REG_DWORD /d 2 /f',
+    ],
+    commands: [],
+  },
+];
+
+export const PREMIUM_TWEAKS: Tweak[] = [
+  // ── RÉSEAU ──────────────────────────────────────────────────────────────────
+  {
+    id: "tcp-autotune",
+    name: "TCP AutoTuning Désactivé",
+    description: "Désactive l'autotuning TCP pour une latence plus stable.",
+    category: "premium",
+    commands: ["netsh int tcp set global autotuninglevel=disabled"],
+  },
+  {
+    id: "tcp-rss",
+    name: "RSS Réseau Activé",
+    description: "Active Receive Side Scaling pour distribuer la charge réseau sur plusieurs cœurs.",
+    category: "premium",
+    commands: ["netsh int tcp set global rss=enabled"],
+  },
+  {
+    id: "tcp-chimney",
+    name: "TCP Chimney Désactivé",
+    description: "Désactive TCP Chimney pour une meilleure compatibilité et stabilité.",
+    category: "premium",
+    commands: [
+      "netsh int tcp set global chimney=disabled",
+      "netsh int tcp set global dca=enabled",
+      "netsh int tcp set global netdma=enabled",
+    ],
+  },
+  {
+    id: "dns-cloudflare",
+    name: "DNS Cloudflare 1.1.1.1",
+    description: "Configure le DNS Cloudflare ultra-rapide pour réduire la latence de résolution DNS.",
+    category: "premium",
+    commands: [
+      'netsh interface ip set dns name="Ethernet" static 1.1.1.1 primary',
+      'netsh interface ip add dns name="Ethernet" 1.0.0.1 index=2',
+    ],
+  },
+  // ── GPU ─────────────────────────────────────────────────────────────────────
+  {
+    id: "gpu-tdr",
+    name: "TDR Delay GPU Optimisé",
+    description: "Augmente TdrDelay et TdrDdiDelay pour éviter les freezes GPU en jeu.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers" /v TdrDelay /t REG_DWORD /d 60 /f',
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers" /v TdrDdiDelay /t REG_DWORD /d 60 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "gpu-hwsched",
+    name: "Hardware Scheduling GPU",
+    description: "Active le Hardware Scheduling GPU (HwSchMode=2) pour de meilleures performances.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers" /v HwSchMode /t REG_DWORD /d 2 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "disable-hpet",
+    name: "Désactivation HPET",
+    description: "Désactive le High Precision Event Timer pour réduire la latence système.",
+    category: "premium",
+    commands: ["bcdedit /deletevalue useplatformclock", "bcdedit /set disabledynamictick yes"],
+  },
+  // ── CPU ─────────────────────────────────────────────────────────────────────
+  {
+    id: "cpu-priority",
+    name: "Priorité CPU Gaming",
+    description: "Configure SchedulingCategory High et Priority 6 pour les jeux via le registre.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games" /v Priority /t REG_DWORD /d 6 /f',
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games" /v "Scheduling Category" /t REG_SZ /d High /f',
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games" /v "SFIO Priority" /t REG_SZ /d High /f',
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games" /v "GPU Priority" /t REG_DWORD /d 8 /f',
+    ],
+    commands: [],
+  },
+  // ── SERVICES ─────────────────────────────────────────────────────────────────
+  {
+    id: "disable-superfetch",
+    name: "Désactivation SysMain (Superfetch)",
+    description: "Désactive Superfetch qui monopolise la RAM et le disque inutilement en jeu.",
+    category: "premium",
+    serviceCommands: ["sc stop SysMain", "sc config SysMain start=disabled"],
+    commands: [],
+  },
+  {
+    id: "disable-tracking",
+    name: "Désactivation DiagTrack & Telemetry",
+    description: "Désactive la télémétrie Windows qui consomme bande passante et CPU.",
+    category: "premium",
+    serviceCommands: [
+      "sc stop DiagTrack",
+      "sc config DiagTrack start=disabled",
+      "sc stop dmwappushservice",
+      "sc config dmwappushservice start=disabled",
+    ],
+    commands: [],
+  },
+  {
+    id: "disable-xbox-services",
+    name: "Désactivation Services Xbox",
+    description: "Désactive XblAuthManager, XblGameSave, XboxGipSvc et XboxNetApiSvc.",
+    category: "premium",
+    serviceCommands: [
+      "sc stop XblAuthManager",
+      "sc config XblAuthManager start=disabled",
+      "sc stop XblGameSave",
+      "sc config XblGameSave start=disabled",
+      "sc stop XboxGipSvc",
+      "sc config XboxGipSvc start=disabled",
+      "sc stop XboxNetApiSvc",
+      "sc config XboxNetApiSvc start=disabled",
+    ],
+    commands: [],
+  },
+  {
+    id: "disable-other-services",
+    name: "Désactivation Services Inutiles",
+    description: "Désactive MapsBroker, RetailDemo et WerSvc (rapport d'erreurs).",
+    category: "premium",
+    serviceCommands: [
+      "sc stop MapsBroker",
+      "sc config MapsBroker start=disabled",
+      "sc stop RetailDemo",
+      "sc config RetailDemo start=disabled",
+      "sc stop WerSvc",
+      "sc config WerSvc start=disabled",
+    ],
+    commands: [],
+  },
+  // ── MÉMOIRE ──────────────────────────────────────────────────────────────────
+  {
+    id: "memory-usage",
+    name: "Optimisation Mémoire fsutil",
+    description: "Configure memoryusage=2 et désactive 8dot3 et lastaccess pour de meilleures performances.",
+    category: "premium",
+    commands: [
+      "fsutil behavior set memoryusage 2",
+      "fsutil behavior set disable8dot3 1",
+      "fsutil behavior set disablelastaccess 1",
+    ],
+  },
+  {
+    id: "disable-memory-compression",
+    name: "Désactivation Memory Compression",
+    description: "Désactive la compression mémoire Windows pour libérer des ressources CPU.",
+    category: "premium",
+    powershellCommands: ["Disable-MMAgent -mc"],
+    commands: [],
+  },
+];
+
+export function generateBatScript(tweaks: Tweak[]): string {
+  const lines: string[] = [
+    "@echo off",
+    "chcp 65001 > nul",
+    "echo ============================================",
+    "echo   KERMOUK OPTIMIZER v2.0 - Application Tweaks",
+    "echo ============================================",
+    "echo.",
+    "",
+  ];
+
+  for (const tweak of tweaks) {
+    lines.push(`echo [*] Application: ${tweak.name}`);
+
+    if (tweak.commands?.length) {
+      for (const cmd of tweak.commands) {
+        lines.push(cmd);
+      }
+    }
+
+    if (tweak.registryCommands?.length) {
+      for (const cmd of tweak.registryCommands) {
+        lines.push(cmd);
+      }
+    }
+
+    if (tweak.serviceCommands?.length) {
+      for (const cmd of tweak.serviceCommands) {
+        lines.push(cmd);
+      }
+    }
+
+    if (tweak.powershellCommands?.length) {
+      for (const cmd of tweak.powershellCommands) {
+        lines.push(`powershell -Command "${cmd}"`);
+      }
+    }
+
+    lines.push("");
+  }
+
+  lines.push(
+    "echo.",
+    "echo ============================================",
+    `echo   ${tweaks.length} tweak(s) applique(s) avec succes !`,
+    "echo   Redemarrez Windows pour appliquer tous les changements.",
+    "echo ============================================",
+    "echo.",
+    "pause"
+  );
+
+  return lines.join("\r\n");
+}
