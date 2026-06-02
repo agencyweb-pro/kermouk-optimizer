@@ -81,7 +81,7 @@ export default function DownloadPage() {
 
             <div className="space-y-3">
               <a
-                href="/downloads/KermoukOptimizer-Free-Setup.exe"
+                href="https://github.com/tranoliviermatteopro-bot/kermouk-optimizer/releases/download/v2.0.0/KERMOUK.OPTIMIZER.Setup.2.0.0.exe"
                 download
                 className="btn-ghost block text-center w-full"
               >

@@ -133,7 +133,7 @@ function ConfirmationContent() {
 
         {/* Download button */}
         <a
-          href="/downloads/KermoukOptimizer-Premium-Setup.exe"
+          href="https://github.com/tranoliviermatteopro-bot/kermouk-optimizer/releases/download/v2.0.0/KERMOUK.OPTIMIZER.Setup.2.0.0.exe"
           download
           className="btn-orange block text-center w-full mb-4 animate-glow-pulse"
         >
