@@ -3,9 +3,9 @@ import Script from "next/script";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Télécharger Kermouk Optimizer v2.1.0 — Gratuit & Premium",
+  title: "Télécharger Kermouk Optimizer v2.2.0 — Gratuit & Premium",
   description:
-    "Télécharge Kermouk Optimizer gratuitement pour booster tes FPS sur Fortnite. Version Free et Premium disponibles. Compatible Windows 10 et 11.",
+    "Télécharge Kermouk Optimizer v2.2.0 gratuitement pour booster tes FPS sur Fortnite. Splash screen animé, thèmes couleurs, monitoring temps réel, 30+ tweaks. Compatible Windows 10 et 11.",
   alternates: { canonical: "https://kermouk.gg/download" },
 };
 
@@ -13,6 +13,7 @@ const jsonLd = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   name: "Kermouk Optimizer",
+  softwareVersion: "2.2.0",
   applicationCategory: "GameApplication",
   operatingSystem: "Windows 10, Windows 11",
   downloadUrl: "https://kermouk.gg/download",
@@ -22,6 +23,41 @@ const jsonLd = {
     priceCurrency: "EUR",
   },
 };
+
+const FREE_FEATURES = [
+  "Désactivation Xbox Game Bar & Game DVR",
+  "Mode haute performance Windows",
+  "Timer Resolution 0.5ms",
+  "Désactivation Hyper-V",
+  "Optimisation SSD/NVMe",
+  "Désactivation Windows Defender RT",
+  "MMCSS Audio Tweaks",
+  "Nettoyage fichiers temporaires",
+  "Mode Gaming — 10 tweaks en 1 clic",
+  "Monitoring CPU/RAM/GPU temps réel",
+  "Ping Fortnite EU en direct",
+  "Splash screen animé + thèmes couleurs",
+];
+
+const PREMIUM_FEATURES = [
+  "Tout FREE inclus",
+  "TCP AutoTune, RSS, Chimney avancé",
+  "Désactivation Algorithme Nagle",
+  "MTU optimisé gaming (1472)",
+  "QoS Fortnite — priorité paquets DSCP 46",
+  "Interrupt Affinity Ethernet",
+  "DNS Cloudflare 1.1.1.1",
+  "TDR Delay & Hardware Scheduling GPU",
+  "Ultra Low Latency Mode NVIDIA",
+  "Power Management Maximum NVIDIA",
+  "GameUserSettings.ini automatique Fortnite",
+  "Nettoyage cache Epic Games + PipelineCaches",
+  "Priorité processus Fortnite HIGH",
+  "Mode Tournoi — tous les tweaks + INI en 1 clic",
+  "Désactivation 10+ services Windows",
+  "Guide BIOS personnalisé",
+  "Overclocking GPU nvidia-smi",
+];
 
 export default function DownloadPage() {
   return (
@@ -35,14 +71,36 @@ export default function DownloadPage() {
       <div className="relative max-w-5xl mx-auto px-6">
         {/* Header */}
         <div className="text-center mb-16">
-          <span className="badge-premium mb-4 inline-block">Téléchargement</span>
+          <span className="badge-premium mb-4 inline-block">Téléchargement — v2.2.0</span>
           <h1 className="font-orbitron font-black text-4xl md:text-5xl mb-4">
             CHOISISSEZ VOTRE <span className="gradient-text">VERSION</span>
           </h1>
           <p className="text-gray-400 max-w-lg mx-auto">
-            KERMOUK OPTIMIZER fonctionne sur Windows 10 et Windows 11.
-            Créez toujours un point de restauration avant d&apos;appliquer des tweaks.
+            KERMOUK OPTIMIZER v2.2.0 — Splash screen animé, thèmes, monitoring temps réel, 30+ tweaks.
+            Compatible Windows 10 et 11.
           </p>
+        </div>
+
+        {/* Nouveautés v2.2.0 */}
+        <div className="card-gaming p-6 mb-8 border border-orange/30 bg-gradient-to-r from-orange/5 to-transparent">
+          <h2 className="font-orbitron font-black text-xl mb-4 gradient-text">Nouveautés v2.2.0</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm text-gray-300">
+            {[
+              { icon: "⚡", text: "Splash screen animé" },
+              { icon: "🎨", text: "4 thèmes couleurs" },
+              { icon: "📊", text: "Monitoring temps réel" },
+              { icon: "🏆", text: "Mode Tournoi (1 clic)" },
+              { icon: "🎮", text: "INI Fortnite auto" },
+              { icon: "🌐", text: "Nagle + MTU + QoS" },
+              { icon: "🖥️", text: "NVIDIA ULL + Power" },
+              { icon: "🧹", text: "Cache cleaner" },
+            ].map((item) => (
+              <div key={item.text} className="flex items-center gap-2 bg-white/5 rounded-lg p-2">
+                <span>{item.icon}</span>
+                <span className="text-xs">{item.text}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Download cards */}
@@ -52,7 +110,7 @@ export default function DownloadPage() {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <div className="font-orbitron font-black text-2xl mb-1">FREE</div>
-                <div className="text-gray-400 text-sm">Tweaks de base — Gratuit</div>
+                <div className="text-gray-400 text-sm">10 tweaks de base — Gratuit</div>
               </div>
               <div className="w-14 h-14 rounded-xl bg-green-500/10 border border-green-500/20 flex items-center justify-center">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2">
@@ -62,14 +120,7 @@ export default function DownloadPage() {
             </div>
 
             <ul className="space-y-2 mb-8 text-sm text-gray-300">
-              {[
-                "Désactivation Xbox Game Bar",
-                "Mode haute performance",
-                "Désactivation notifications",
-                "Nettoyage fichiers temp",
-                "Désactivation Game DVR",
-                "Interface complète incluse",
-              ].map((item) => (
+              {FREE_FEATURES.map((item) => (
                 <li key={item} className="flex items-center gap-2">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="#22c55e">
                     <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -81,14 +132,14 @@ export default function DownloadPage() {
 
             <div className="space-y-3">
               <a
-                href="https://github.com/tranoliviermatteopro-bot/kermouk-optimizer/releases/download/v2.1.0/KERMOUK.OPTIMIZER.Setup.2.1.0.exe"
+                href="https://github.com/tranoliviermatteopro-bot/kermouk-optimizer/releases/download/v2.2.0/KERMOUK.OPTIMIZER.Setup.2.2.0.exe"
                 download
                 className="btn-ghost block text-center w-full"
               >
-                Télécharger v2.1.0 FREE (.exe)
+                Télécharger v2.2.0 FREE (.exe)
               </a>
               <p className="text-xs text-center text-gray-600">
-                Windows 10/11 — 64-bit — ~45 MB
+                Windows 10/11 — 64-bit — ~50 MB
               </p>
             </div>
           </div>
@@ -101,7 +152,7 @@ export default function DownloadPage() {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <div className="font-orbitron font-black text-2xl mb-1 gradient-text">PREMIUM</div>
-                <div className="text-gray-400 text-sm">Tous les tweaks débloqués</div>
+                <div className="text-gray-400 text-sm">30+ tweaks débloqués</div>
               </div>
               <div className="w-14 h-14 rounded-xl bg-orange/10 border border-orange/30 flex items-center justify-center">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#FF6B00" strokeWidth="2">
@@ -111,22 +162,7 @@ export default function DownloadPage() {
             </div>
 
             <ul className="space-y-2 mb-8 text-sm text-gray-300 flex-1">
-              {[
-                "Tout FREE inclus",
-                "Optimisation TCP/IP avancée",
-                "DNS Cloudflare 1.1.1.1",
-                "Hardware Scheduling GPU",
-                "CPU Priority SchedulingCategory High",
-                "Désactivation 10+ services Windows",
-                "Tweaks mémoire fsutil",
-                "Tweaks Fortnite dédiés",
-                "Priorité processus Fortnite",
-                "Guide BIOS personnalisé (ASUS/MSI/Gigabyte/ASRock)",
-                "Overclocking GPU via nvidia-smi (profils Safe/Balanced/Aggressive)",
-                "Profil Performance Maximum CPU (Core Parking, HPET, Power Plan)",
-                "Monitoring temps réel CPU/GPU/RAM",
-                "Clé de licence unique (UUID)",
-              ].map((item) => (
+              {PREMIUM_FEATURES.map((item) => (
                 <li key={item} className="flex items-center gap-2">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="#FF6B00">
                     <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -159,8 +195,8 @@ export default function DownloadPage() {
             <h3 className="font-rajdhani font-700 text-orange mb-1">Sécurité & Fiabilité</h3>
             <p className="text-gray-400 text-sm leading-relaxed">
               KERMOUK OPTIMIZER crée automatiquement un point de restauration Windows avant
-              chaque session d&apos;optimisation. Tous les tweaks sont réversibles via le bouton
-              &quot;Restaurer les paramètres d&apos;origine&quot;. Nécessite des droits Administrateur.
+              chaque session d&apos;optimisation. Tous les tweaks sont réversibles.
+              Nécessite des droits Administrateur. v2.2.0 — 30+ tweaks testés et validés.
             </p>
           </div>
         </div>
