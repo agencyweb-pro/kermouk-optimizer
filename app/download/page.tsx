@@ -3,7 +3,7 @@ import Script from "next/script";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Télécharger Kermouk Optimizer — Gratuit & Premium",
+  title: "Télécharger Kermouk Optimizer v2.1.0 — Gratuit & Premium",
   description:
     "Télécharge Kermouk Optimizer gratuitement pour booster tes FPS sur Fortnite. Version Free et Premium disponibles. Compatible Windows 10 et 11.",
   alternates: { canonical: "https://kermouk.gg/download" },
@@ -81,11 +81,11 @@ export default function DownloadPage() {
 
             <div className="space-y-3">
               <a
-                href="https://github.com/tranoliviermatteopro-bot/kermouk-optimizer/releases/download/v2.0.0/KERMOUK.OPTIMIZER.Setup.2.0.0.exe"
+                href="https://github.com/tranoliviermatteopro-bot/kermouk-optimizer/releases/download/v2.1.0/KERMOUK.OPTIMIZER.Setup.2.1.0.exe"
                 download
                 className="btn-ghost block text-center w-full"
               >
-                Télécharger v2.0 FREE (.exe)
+                Télécharger v2.1.0 FREE (.exe)
               </a>
               <p className="text-xs text-center text-gray-600">
                 Windows 10/11 — 64-bit — ~45 MB
@@ -121,6 +121,10 @@ export default function DownloadPage() {
                 "Tweaks mémoire fsutil",
                 "Tweaks Fortnite dédiés",
                 "Priorité processus Fortnite",
+                "Guide BIOS personnalisé (ASUS/MSI/Gigabyte/ASRock)",
+                "Overclocking GPU via nvidia-smi (profils Safe/Balanced/Aggressive)",
+                "Profil Performance Maximum CPU (Core Parking, HPET, Power Plan)",
+                "Monitoring temps réel CPU/GPU/RAM",
                 "Clé de licence unique (UUID)",
               ].map((item) => (
                 <li key={item} className="flex items-center gap-2">
