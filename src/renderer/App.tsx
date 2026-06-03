@@ -68,6 +68,9 @@ declare global {
       getDriverInfo: () => Promise<{ gpu: string; gpuVersion: string; isNvidia: boolean; isAmd: boolean }>;
       applyStreamingMode: () => Promise<{ ok: boolean; error?: string }>;
       setNotificationsEnabled: (enabled: boolean) => Promise<void>;
+      checkForUpdates: () => Promise<void>;
+      installUpdate: () => Promise<void>;
+      onUpdateStatus: (cb: (payload: Record<string, unknown>) => void) => () => void;
     };
   }
 }

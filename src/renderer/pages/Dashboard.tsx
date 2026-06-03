@@ -27,6 +27,8 @@ const FORTNITE_EU_SERVER = "13.248.195.0";
 const ALL_FREE = FREE_TWEAKS;
 const ALL_TWEAKS = [...FREE_TWEAKS, ...PREMIUM_TWEAKS];
 
+type UpdateStatus = "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "error";
+
 export default function Dashboard({ isPremium, openLicenseModal }: DashboardProps) {
   const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,6 +38,12 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
   const [modeApplying, setModeApplying] = useState<"gaming" | "tournoi" | "streaming" | null>(null);
   const [modeDone, setModeDone] = useState<string>("");
   const tweaksCount = parseInt(localStorage.getItem("kermouk_tweaks_count") || "0");
+
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
+  const [updateVersion, setUpdateVersion] = useState<string>("");
+  const [updatePercent, setUpdatePercent] = useState<number>(0);
+  const [updateError, setUpdateError] = useState<string>("");
+  const currentVersion = "2.3.1";
 
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hwIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -64,9 +72,18 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
     fetchPing();
     pingIntervalRef.current = setInterval(fetchPing, 8000);
 
+    const removeUpdateListener = window.kermouk?.onUpdateStatus?.((payload) => {
+      const type = payload.type as UpdateStatus;
+      setUpdateStatus(type);
+      if (payload.version) setUpdateVersion(payload.version as string);
+      if (payload.percent !== undefined) setUpdatePercent(payload.percent as number);
+      if (payload.message) setUpdateError(payload.message as string);
+    });
+
     return () => {
       if (hwIntervalRef.current) clearInterval(hwIntervalRef.current);
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+      removeUpdateListener?.();
     };
   }, []);
 
@@ -129,6 +146,16 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
       setModeDone("✗ Erreur — vérifiez la fenêtre UAC.");
     }
     setModeApplying(null);
+  };
+
+  const handleCheckUpdate = async () => {
+    setUpdateStatus("checking");
+    setUpdateError("");
+    await window.kermouk?.checkForUpdates?.();
+  };
+
+  const handleInstallUpdate = () => {
+    window.kermouk?.installUpdate?.();
   };
 
   const handleModeStreaming = async () => {
@@ -440,6 +467,18 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
         )}
       </div>
 
+      {/* Update section */}
+      <UpdateCard
+        status={updateStatus}
+        version={updateVersion}
+        percent={updatePercent}
+        errorMsg={updateError}
+        currentVersion={currentVersion}
+        onCheck={handleCheckUpdate}
+        onInstall={handleInstallUpdate}
+        onDismiss={() => setUpdateStatus("idle")}
+      />
+
       {/* Quick tips */}
       <div className="card" style={{ marginTop: "12px" }}>
         <div style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px", textTransform: "uppercase", letterSpacing: "0.08em", color: "#666", marginBottom: "12px" }}>
@@ -462,6 +501,114 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
           ))}
         </ul>
       </div>
+    </div>
+  );
+}
+
+// ─── Update card sub-component ───────────────────────────────────────────────
+interface UpdateCardProps {
+  status: UpdateStatus;
+  version: string;
+  percent: number;
+  errorMsg: string;
+  currentVersion: string;
+  onCheck: () => void;
+  onInstall: () => void;
+  onDismiss: () => void;
+}
+
+function UpdateCard({ status, version, percent, errorMsg, currentVersion, onCheck, onInstall, onDismiss }: UpdateCardProps) {
+  const isUpToDate = status === "up-to-date";
+  const isAvailable = status === "available";
+  const isDownloading = status === "downloading";
+  const isDownloaded = status === "downloaded";
+  const isError = status === "error";
+  const isChecking = status === "checking";
+
+  const badgeColor = isUpToDate ? "#22c55e"
+    : isAvailable || isDownloading || isDownloaded ? "#f59e0b"
+    : isError ? "#ef4444"
+    : "#555";
+
+  const badgeBg = isUpToDate ? "rgba(34,197,94,0.08)"
+    : isAvailable || isDownloading || isDownloaded ? "rgba(245,158,11,0.08)"
+    : isError ? "rgba(239,68,68,0.08)"
+    : "rgba(80,80,80,0.08)";
+
+  const badgeBorder = isUpToDate ? "rgba(34,197,94,0.2)"
+    : isAvailable || isDownloading || isDownloaded ? "rgba(245,158,11,0.2)"
+    : isError ? "rgba(239,68,68,0.2)"
+    : "#1e1e1e";
+
+  const badgeLabel = isUpToDate ? `✓ Dernière version — v${currentVersion}`
+    : isAvailable ? `⚠ Mise à jour disponible — v${version}`
+    : isDownloading ? `↓ Téléchargement... ${percent}%`
+    : isDownloaded ? `✓ Prête à installer — v${version}`
+    : isError ? "✗ Erreur de mise à jour"
+    : isChecking ? "Vérification en cours..."
+    : `Version actuelle — v${currentVersion}`;
+
+  return (
+    <div className="card" style={{ marginTop: "12px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: isDownloading || isDownloaded || isError ? "12px" : "0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.1em", color: "#555" }}>
+            Mise à jour
+          </div>
+          <div style={{
+            padding: "3px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 700,
+            color: badgeColor, background: badgeBg, border: `1px solid ${badgeBorder}`,
+            fontFamily: "Rajdhani, sans-serif", letterSpacing: "0.04em",
+          }}>
+            {badgeLabel}
+          </div>
+        </div>
+        <button
+          onClick={onCheck}
+          disabled={isChecking || isDownloading}
+          style={{
+            padding: "4px 12px", borderRadius: "6px", fontSize: "10px",
+            background: "transparent", border: "1px solid #1e1e1e", color: "#555",
+            cursor: isChecking || isDownloading ? "default" : "pointer",
+            fontFamily: "Rajdhani, sans-serif", fontWeight: 700, letterSpacing: "0.06em",
+            opacity: isChecking || isDownloading ? 0.4 : 1,
+          }}
+        >
+          {isChecking ? "Vérification..." : "Vérifier"}
+        </button>
+      </div>
+
+      {/* Download progress bar */}
+      {isDownloading && (
+        <div>
+          <div className="ram-bar" style={{ marginBottom: "4px" }}>
+            <div className="ram-fill" style={{ width: `${percent}%`, background: "#f59e0b", transition: "width 0.3s" }} />
+          </div>
+          <div style={{ fontSize: "10px", color: "#555", textAlign: "right" }}>{percent}%</div>
+        </div>
+      )}
+
+      {/* Ready to install */}
+      {isDownloaded && (
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <div style={{ flex: 1, fontSize: "11px", color: "#f59e0b" }}>
+            v{version} téléchargée — redémarrer pour appliquer
+          </div>
+          <button onClick={onInstall} className="btn-primary" style={{ padding: "6px 14px", fontSize: "11px", whiteSpace: "nowrap" }}>
+            Redémarrer et mettre à jour
+          </button>
+          <button onClick={onDismiss} style={{ padding: "5px 10px", background: "none", border: "1px solid #1e1e1e", borderRadius: "6px", color: "#555", fontSize: "11px", cursor: "pointer" }}>
+            Plus tard
+          </button>
+        </div>
+      )}
+
+      {/* Error */}
+      {isError && (
+        <div style={{ fontSize: "11px", color: "#ef4444" }}>
+          {errorMsg || "Impossible de vérifier les mises à jour. Vérifiez votre connexion internet."}
+        </div>
+      )}
     </div>
   );
 }

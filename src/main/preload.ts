@@ -51,4 +51,13 @@ contextBridge.exposeInMainWorld("kermouk", {
 
   // Notifications
   setNotificationsEnabled: (enabled: boolean) => ipcRenderer.invoke("set-notifications-enabled", enabled),
+
+  // Auto-updater
+  checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
+  installUpdate: () => ipcRenderer.invoke("install-update"),
+  onUpdateStatus: (cb: (payload: Record<string, unknown>) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: Record<string, unknown>) => cb(payload);
+    ipcRenderer.on("update-status", handler);
+    return () => ipcRenderer.removeListener("update-status", handler);
+  },
 });

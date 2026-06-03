@@ -1,6 +1,6 @@
 {
   "name": "kermouk-optimizer-desktop",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "KERMOUK OPTIMIZER — Gaming Optimizer pour Fortnite",
   "main": "out/main/index.js",
   "scripts": {
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "electron-store": "^8.1.0",
+    "electron-updater": "^6.8.3",
     "systeminformation": "^5.22.11",
     "uuid": "^9.0.1"
   },
@@ -34,6 +35,11 @@
     "appId": "com.kermouk.optimizer",
     "productName": "KERMOUK OPTIMIZER",
     "copyright": "© 2024 KERMOUK OPTIMIZER",
+    "publish": {
+      "provider": "github",
+      "owner": "tranoliviermatteopro-bot",
+      "repo": "kermouk-optimizer"
+    },
     "win": {
       "target": [
         {
@@ -48,7 +54,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true
     },
     "files": [
       "out/**/*"

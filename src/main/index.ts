@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell, Notification } from "electron";
+import { autoUpdater } from "electron-updater";
 import { join } from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -79,6 +80,7 @@ app.whenReady().then(() => {
 
   const win = createWindow();
   startMonitoring(win);
+  initAutoUpdater(win);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -587,6 +589,62 @@ echo STREAMING_MODE_OK
 let notificationsEnabled = true;
 ipcMain.handle("set-notifications-enabled", (_e, enabled: boolean) => {
   notificationsEnabled = enabled;
+});
+
+// ─── Auto-updater ─────────────────────────────────────────────────────────────
+function initAutoUpdater(win: BrowserWindow) {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  const send = (type: string, payload?: Record<string, unknown>) => {
+    if (!win.isDestroyed()) win.webContents.send("update-status", { type, ...payload });
+  };
+
+  autoUpdater.on("checking-for-update", () => send("checking"));
+
+  autoUpdater.on("update-available", (info) => {
+    send("available", { version: info.version });
+    new Notification({
+      title: "KERMOUK — Mise à jour disponible",
+      body: `Version ${info.version} disponible — téléchargement en cours...`,
+      icon: join(__dirname, "../../resources/icon.png"),
+    }).show();
+  });
+
+  autoUpdater.on("update-not-available", () => send("up-to-date"));
+
+  autoUpdater.on("download-progress", (p) =>
+    send("downloading", { percent: Math.round(p.percent), bytesPerSecond: Math.round(p.bytesPerSecond) })
+  );
+
+  autoUpdater.on("update-downloaded", (info) => {
+    send("downloaded", { version: info.version });
+  });
+
+  autoUpdater.on("error", (err) => {
+    send("error", { message: err.message });
+  });
+
+  // Vérification au lancement (délai 5s pour laisser l'app s'initialiser)
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(() => { /* silencieux si pas de connexion */ });
+  }, 5000);
+}
+
+// ─── IPC: Update controls ─────────────────────────────────────────────────────
+ipcMain.handle("check-for-updates", async () => {
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("update-status", { type: "error", message: "Impossible de vérifier les mises à jour" });
+    }
+  }
+});
+
+ipcMain.handle("install-update", () => {
+  autoUpdater.quitAndInstall(false, true);
 });
 
 // ─── Background: Smart monitoring every 30s ──────────────────────────────────
