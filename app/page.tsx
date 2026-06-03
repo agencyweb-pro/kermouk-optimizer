@@ -1,6 +1,9 @@
 import Hero from "@/components/Hero";
 import Features from "@/components/Features";
 import Pricing from "@/components/Pricing";
+import Testimonials from "@/components/Testimonials";
+import AnimatedCounter from "@/components/AnimatedCounter";
+import ExitIntent from "@/components/ExitIntent";
 import type { Metadata } from "next";
 import Script from "next/script";
 
@@ -115,30 +118,12 @@ export default function HomePage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdFaq) }}
       />
+      <ExitIntent />
       <Hero />
       <Features />
+      <AnimatedCounter />
+      <Testimonials />
       <Pricing />
-
-      {/* Stats Section */}
-      <section className="py-20 bg-card border-y border-border">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-            {[
-              { number: "+40%", label: "FPS moyens gagnés" },
-              { number: "-30ms", label: "Latence réduite" },
-              { number: "50K+", label: "Joueurs optimisés" },
-              { number: "4.9/5", label: "Note utilisateurs" },
-            ].map((stat) => (
-              <div key={stat.label} className="reveal">
-                <div className="stat-number">{stat.number}</div>
-                <div className="text-gray-400 text-sm mt-2 font-rajdhani uppercase tracking-wider">
-                  {stat.label}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
       {/* CTA Section */}
       <section className="py-28 relative overflow-hidden">

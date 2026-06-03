@@ -3,9 +3,9 @@ import Script from "next/script";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Télécharger Kermouk Optimizer v2.2.0 — Gratuit & Premium",
+  title: "Télécharger Kermouk Optimizer v2.3.0 — Gratuit & Premium",
   description:
-    "Télécharge Kermouk Optimizer v2.2.0 gratuitement pour booster tes FPS sur Fortnite. Splash screen animé, thèmes couleurs, monitoring temps réel, 30+ tweaks. Compatible Windows 10 et 11.",
+    "Télécharge Kermouk Optimizer v2.3.0 gratuitement pour booster tes FPS sur Fortnite. Splash screen animé, thèmes couleurs, monitoring temps réel, 30+ tweaks. Compatible Windows 10 et 11.",
   alternates: { canonical: "https://kermouk.gg/download" },
 };
 
@@ -54,6 +54,9 @@ const PREMIUM_FEATURES = [
   "Nettoyage cache Epic Games + PipelineCaches",
   "Priorité processus Fortnite HIGH",
   "Mode Tournoi — tous les tweaks + INI en 1 clic",
+  "Mode Streaming — OBS + Fortnite optimisés",
+  "Benchmark Avant/Après avec graphiques",
+  "Profils par jeu (Fortnite, Warzone, Apex, Valorant, CS2, Minecraft)",
   "Désactivation 10+ services Windows",
   "Guide BIOS personnalisé",
   "Overclocking GPU nvidia-smi",
@@ -71,29 +74,29 @@ export default function DownloadPage() {
       <div className="relative max-w-5xl mx-auto px-6">
         {/* Header */}
         <div className="text-center mb-16">
-          <span className="badge-premium mb-4 inline-block">Téléchargement — v2.2.0</span>
+          <span className="badge-premium mb-4 inline-block">Téléchargement — v2.3.0</span>
           <h1 className="font-orbitron font-black text-4xl md:text-5xl mb-4">
             CHOISISSEZ VOTRE <span className="gradient-text">VERSION</span>
           </h1>
           <p className="text-gray-400 max-w-lg mx-auto">
-            KERMOUK OPTIMIZER v2.2.0 — Splash screen animé, thèmes, monitoring temps réel, 30+ tweaks.
+            KERMOUK OPTIMIZER v2.3.0 — Splash screen animé, thèmes, monitoring temps réel, 30+ tweaks.
             Compatible Windows 10 et 11.
           </p>
         </div>
 
-        {/* Nouveautés v2.2.0 */}
+        {/* Nouveautés v2.3.0 */}
         <div className="card-gaming p-6 mb-8 border border-orange/30 bg-gradient-to-r from-orange/5 to-transparent">
-          <h2 className="font-orbitron font-black text-xl mb-4 gradient-text">Nouveautés v2.2.0</h2>
+          <h2 className="font-orbitron font-black text-xl mb-4 gradient-text">Nouveautés v2.3.0</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm text-gray-300">
             {[
-              { icon: "⚡", text: "Splash screen animé" },
-              { icon: "🎨", text: "4 thèmes couleurs" },
-              { icon: "📊", text: "Monitoring temps réel" },
-              { icon: "🏆", text: "Mode Tournoi (1 clic)" },
-              { icon: "🎮", text: "INI Fortnite auto" },
-              { icon: "🌐", text: "Nagle + MTU + QoS" },
-              { icon: "🖥️", text: "NVIDIA ULL + Power" },
-              { icon: "🧹", text: "Cache cleaner" },
+              { icon: "⏱️", text: "Calculateur Input Lag" },
+              { icon: "📊", text: "Benchmark Avant/Après" },
+              { icon: "🎮", text: "Profils 6 jeux" },
+              { icon: "🧹", text: "Nettoyeur auto" },
+              { icon: "🎬", text: "Mode Streaming OBS" },
+              { icon: "🔔", text: "Notifications intelligentes" },
+              { icon: "🛡️", text: "Badges Anti-Cheat" },
+              { icon: "🔧", text: "Détection drivers GPU" },
             ].map((item) => (
               <div key={item.text} className="flex items-center gap-2 bg-white/5 rounded-lg p-2">
                 <span>{item.icon}</span>
@@ -132,11 +135,11 @@ export default function DownloadPage() {
 
             <div className="space-y-3">
               <a
-                href="https://github.com/tranoliviermatteopro-bot/kermouk-optimizer/releases/download/v2.2.0/KERMOUK.OPTIMIZER.Setup.2.2.0.exe"
+                href="https://github.com/tranoliviermatteopro-bot/kermouk-optimizer/releases/download/v2.3.0/KERMOUK.OPTIMIZER.Setup.2.2.0.exe"
                 download
                 className="btn-ghost block text-center w-full"
               >
-                Télécharger v2.2.0 FREE (.exe)
+                Télécharger v2.3.0 FREE (.exe)
               </a>
               <p className="text-xs text-center text-gray-600">
                 Windows 10/11 — 64-bit — ~50 MB
@@ -196,7 +199,7 @@ export default function DownloadPage() {
             <p className="text-gray-400 text-sm leading-relaxed">
               KERMOUK OPTIMIZER crée automatiquement un point de restauration Windows avant
               chaque session d&apos;optimisation. Tous les tweaks sont réversibles.
-              Nécessite des droits Administrateur. v2.2.0 — 30+ tweaks testés et validés.
+              Nécessite des droits Administrateur. v2.3.0 — 30+ tweaks testés et validés.
             </p>
           </div>
         </div>

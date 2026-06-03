@@ -16,8 +16,11 @@ export default function Navbar() {
   const links = [
     { href: "/", label: "Accueil" },
     { href: "/#features", label: "Fonctionnalités" },
+    { href: "/compatible", label: "Jeux" },
+    { href: "/blog", label: "Blog" },
     { href: "/download", label: "Télécharger" },
     { href: "/#pricing", label: "Tarifs" },
+    { href: "/referral", label: "Parrainage" },
   ];
 
   return (
