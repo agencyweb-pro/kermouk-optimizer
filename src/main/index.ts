@@ -454,6 +454,206 @@ ipcMain.handle("clean-fortnite-cache", async () => {
   }
 });
 
+// ─── IPC: GPO — scan status ──────────────────────────────────────────────────
+ipcMain.handle("scan-gpo-status", async () => {
+  const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+function Get-Reg($path, $name) {
+  try { return (Get-ItemProperty -LiteralPath "Registry::$path" -Name $name -ErrorAction Stop).$name } catch { return $null }
+}
+$gpedit = Test-Path "$env:SystemRoot\\System32\\gpedit.msc"
+
+# VBS status
+$vbs = $false
+try {
+  $dg = Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root/Microsoft/Windows/DeviceGuard -ErrorAction Stop
+  $vbs = ($dg.VirtualizationBasedSecurityStatus -eq 2)
+} catch {}
+
+# Tweak checks
+$bandwidth    = (Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Psched" "NonBestEffortLimit") -eq 0
+$qos          = (Test-Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\QoS\Fortnite")
+$delivOpt     = (Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" "DODownloadMode") -eq 0
+$powerThrot   = (Get-Reg "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling" "PowerThrottlingOff") -eq 1
+$hags         = (Get-Reg "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "HwSchMode") -eq 2
+$fastStartup  = (Get-Reg "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Power" "HiberbootEnabled") -eq 0
+$vbsDisabled  = (Get-Reg "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\DeviceGuard" "EnableVirtualizationBasedSecurity") -eq 0
+$telemetry    = (Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DataCollection" "AllowTelemetry") -eq 0
+$cortana      = (Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "AllowCortana") -eq 0
+$onedrive     = (Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\OneDrive" "DisableFileSyncNGSC") -eq 1
+$winupdate    = (Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" "NoAutoUpdate") -eq 1
+$appCompat    = (Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\AppCompat" "AITEnable") -eq 0
+
+function s($b) { if ($b) { 'active' } else { 'inactive' } }
+@{
+  gpeditAvailable = [bool]$gpedit
+  vbsActive = [bool]$vbs
+  tweaks = @{
+    bandwidth    = s $bandwidth
+    qos_fortnite = s $qos
+    delivery_opt = s $delivOpt
+    power_throttling = s $powerThrot
+    hags         = s $hags
+    fast_startup = s $fastStartup
+    vbs          = s $vbsDisabled
+    telemetry    = s $telemetry
+    cortana      = s $cortana
+    onedrive     = s $onedrive
+    windows_update = s $winupdate
+    app_compat   = s $appCompat
+  }
+} | ConvertTo-Json -Depth 3
+`;
+  try {
+    const out = await runPs1(script, false, 12000);
+    return JSON.parse(out);
+  } catch {
+    return { gpeditAvailable: false, vbsActive: false, tweaks: {} };
+  }
+});
+
+// ─── IPC: GPO — install gpedit on Windows Home ───────────────────────────────
+ipcMain.handle("install-gpedit", async () => {
+  const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+$packages = Get-ChildItem "$env:SystemRoot\\servicing\\Packages" -Filter "Microsoft-Windows-GroupPolicy-ClientExtensions-Package~3*.mum" | Select-Object -ExpandProperty FullName
+foreach ($pkg in $packages) {
+  dism /Online /NoRestart /Add-Package:$pkg | Out-Null
+}
+$packages2 = Get-ChildItem "$env:SystemRoot\\servicing\\Packages" -Filter "Microsoft-Windows-GroupPolicy-ClientTools-Package~3*.mum" | Select-Object -ExpandProperty FullName
+foreach ($pkg in $packages2) {
+  dism /Online /NoRestart /Add-Package:$pkg | Out-Null
+}
+Write-Host "DONE"
+`;
+  try {
+    await runPs1(script, true, 120000);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// ─── IPC: GPO — apply tweaks ─────────────────────────────────────────────────
+ipcMain.handle("apply-gpo-tweaks", async (_e, ids: string[]) => {
+  const lines: string[] = ["@echo off"];
+
+  if (ids.includes("bandwidth"))
+    lines.push(`reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Psched" /v NonBestEffortLimit /t REG_DWORD /d 0 /f >nul`);
+
+  if (ids.includes("qos_fortnite")) {
+    const base = `HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\QoS\\Fortnite`;
+    lines.push(
+      `reg add "${base}" /v "Application" /t REG_SZ /d "FortniteClient-Win64-Shipping.exe" /f >nul`,
+      `reg add "${base}" /v "DSCP Value" /t REG_SZ /d "46" /f >nul`,
+      `reg add "${base}" /v "Local Port" /t REG_SZ /d "*" /f >nul`,
+      `reg add "${base}" /v "Protocol" /t REG_SZ /d "*" /f >nul`,
+      `reg add "${base}" /v "Throttle Rate" /t REG_SZ /d "-1" /f >nul`,
+    );
+  }
+
+  if (ids.includes("delivery_opt"))
+    lines.push(`reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DeliveryOptimization" /v DODownloadMode /t REG_DWORD /d 0 /f >nul`);
+
+  if (ids.includes("power_throttling"))
+    lines.push(`reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power\\PowerThrottling" /v PowerThrottlingOff /t REG_DWORD /d 1 /f >nul`);
+
+  if (ids.includes("hags"))
+    lines.push(`reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers" /v HwSchMode /t REG_DWORD /d 2 /f >nul`);
+
+  if (ids.includes("fast_startup"))
+    lines.push(`reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power" /v HiberbootEnabled /t REG_DWORD /d 0 /f >nul`);
+
+  if (ids.includes("vbs")) {
+    lines.push(
+      `reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard" /v EnableVirtualizationBasedSecurity /t REG_DWORD /d 0 /f >nul`,
+      `reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity" /v Enabled /t REG_DWORD /d 0 /f >nul`,
+    );
+  }
+
+  if (ids.includes("telemetry")) {
+    lines.push(
+      `reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection" /v AllowTelemetry /t REG_DWORD /d 0 /f >nul`,
+      `reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection" /v MaxTelemetryAllowed /t REG_DWORD /d 0 /f >nul`,
+    );
+  }
+
+  if (ids.includes("app_compat")) {
+    lines.push(
+      `reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\AppCompat" /v AITEnable /t REG_DWORD /d 0 /f >nul`,
+      `reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\AppCompat" /v DisableInventory /t REG_DWORD /d 1 /f >nul`,
+    );
+  }
+
+  if (ids.includes("cortana")) {
+    lines.push(
+      `reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search" /v AllowCortana /t REG_DWORD /d 0 /f >nul`,
+      `reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search" /v DisableWebSearch /t REG_DWORD /d 1 /f >nul`,
+      `reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search" /v ConnectedSearchUseWeb /t REG_DWORD /d 0 /f >nul`,
+    );
+  }
+
+  if (ids.includes("onedrive"))
+    lines.push(`reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\OneDrive" /v DisableFileSyncNGSC /t REG_DWORD /d 1 /f >nul`);
+
+  if (ids.includes("windows_update")) {
+    lines.push(
+      `reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU" /v NoAutoUpdate /t REG_DWORD /d 1 /f >nul`,
+      `reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU" /v AUOptions /t REG_DWORD /d 2 /f >nul`,
+    );
+  }
+
+  lines.push("echo OK");
+  const batContent = lines.join("\r\n");
+  const batPath = join(SCRIPTS_DIR, `gpo_${Date.now()}.bat`);
+
+  try {
+    fs.writeFileSync(batPath, batContent, "utf-8");
+    const cmd = `powershell -Command "Start-Process cmd.exe -ArgumentList '/c \\"${batPath.replace(/\\/g, "\\\\")}\\""' -Verb RunAs -Wait"`;
+    await execAsync(cmd, { timeout: 60000 });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  } finally {
+    if (fs.existsSync(batPath)) fs.unlinkSync(batPath);
+  }
+});
+
+// ─── IPC: GPO — restore defaults ─────────────────────────────────────────────
+ipcMain.handle("restore-gpo-defaults", async () => {
+  const batContent = `@echo off
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Psched" /v NonBestEffortLimit /f >nul 2>&1
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\QoS\\Fortnite" /f >nul 2>&1
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DeliveryOptimization" /v DODownloadMode /f >nul 2>&1
+reg delete "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power\\PowerThrottling" /v PowerThrottlingOff /f >nul 2>&1
+reg add    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers" /v HwSchMode /t REG_DWORD /d 1 /f >nul
+reg add    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power" /v HiberbootEnabled /t REG_DWORD /d 1 /f >nul
+reg add    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard" /v EnableVirtualizationBasedSecurity /t REG_DWORD /d 1 /f >nul
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection" /v AllowTelemetry /f >nul 2>&1
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection" /v MaxTelemetryAllowed /f >nul 2>&1
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\AppCompat" /v AITEnable /f >nul 2>&1
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\AppCompat" /v DisableInventory /f >nul 2>&1
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search" /v AllowCortana /f >nul 2>&1
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search" /v DisableWebSearch /f >nul 2>&1
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search" /v ConnectedSearchUseWeb /f >nul 2>&1
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\OneDrive" /v DisableFileSyncNGSC /f >nul 2>&1
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU" /v NoAutoUpdate /f >nul 2>&1
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU" /v AUOptions /f >nul 2>&1
+echo OK
+`;
+  const batPath = join(SCRIPTS_DIR, `gpo_restore_${Date.now()}.bat`);
+  try {
+    fs.writeFileSync(batPath, batContent, "utf-8");
+    const cmd = `powershell -Command "Start-Process cmd.exe -ArgumentList '/c \\"${batPath.replace(/\\/g, "\\\\")}\\""' -Verb RunAs -Wait"`;
+    await execAsync(cmd, { timeout: 30000 });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  } finally {
+    if (fs.existsSync(batPath)) fs.unlinkSync(batPath);
+  }
+});
+
 // ─── IPC: Scan junk files ────────────────────────────────────────────────────
 ipcMain.handle("scan-junk", async () => {
   const script = `

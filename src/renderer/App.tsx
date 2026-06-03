@@ -17,6 +17,7 @@ import InputLagCalculator from "./pages/InputLagCalculator";
 import Benchmark from "./pages/Benchmark";
 import GameProfiles from "./pages/GameProfiles";
 import Cleaner from "./pages/Cleaner";
+import GpoTweaks from "./pages/GpoTweaks";
 
 export type Page =
   | "dashboard"
@@ -31,6 +32,7 @@ export type Page =
   | "benchmark"
   | "gameprofiles"
   | "cleaner"
+  | "gpo"
   | "about";
 
 export interface AppState {
@@ -68,6 +70,10 @@ declare global {
       getDriverInfo: () => Promise<{ gpu: string; gpuVersion: string; isNvidia: boolean; isAmd: boolean }>;
       applyStreamingMode: () => Promise<{ ok: boolean; error?: string }>;
       setNotificationsEnabled: (enabled: boolean) => Promise<void>;
+      scanGpoStatus: () => Promise<{ gpeditAvailable: boolean; vbsActive: boolean; tweaks: Record<string, string> }>;
+      installGpedit: () => Promise<{ ok: boolean; error?: string }>;
+      applyGpoTweaks: (ids: string[]) => Promise<{ ok: boolean; error?: string }>;
+      restoreGpoDefaults: () => Promise<{ ok: boolean; error?: string }>;
       checkForUpdates: () => Promise<void>;
       installUpdate: () => Promise<void>;
       onUpdateStatus: (cb: (payload: Record<string, unknown>) => void) => () => void;
@@ -170,6 +176,7 @@ export default function App() {
       case "benchmark":          content = <Benchmark {...pageProps} />; break;
       case "gameprofiles":       content = <GameProfiles {...pageProps} />; break;
       case "cleaner":            content = <Cleaner {...pageProps} />; break;
+      case "gpo":                content = <GpoTweaks {...pageProps} />; break;
       case "about":
         content = (
           <About

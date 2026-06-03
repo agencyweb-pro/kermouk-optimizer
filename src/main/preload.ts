@@ -52,6 +52,12 @@ contextBridge.exposeInMainWorld("kermouk", {
   // Notifications
   setNotificationsEnabled: (enabled: boolean) => ipcRenderer.invoke("set-notifications-enabled", enabled),
 
+  // GPO tweaks
+  scanGpoStatus: () => ipcRenderer.invoke("scan-gpo-status"),
+  installGpedit: () => ipcRenderer.invoke("install-gpedit"),
+  applyGpoTweaks: (ids: string[]) => ipcRenderer.invoke("apply-gpo-tweaks", ids),
+  restoreGpoDefaults: () => ipcRenderer.invoke("restore-gpo-defaults"),
+
   // Auto-updater
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
   installUpdate: () => ipcRenderer.invoke("install-update"),
