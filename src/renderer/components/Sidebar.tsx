@@ -7,7 +7,13 @@ interface SidebarProps {
   onUnlockPremium: () => void;
 }
 
-const navItems: { id: Page; label: string; icon: React.ReactNode; premiumRequired?: boolean }[] = [
+const navItems: {
+  id: Page;
+  label: string;
+  icon: React.ReactNode;
+  premiumRequired?: boolean;
+  isNew?: boolean;
+}[] = [
   {
     id: "dashboard",
     label: "Tableau de bord",
@@ -29,6 +35,7 @@ const navItems: { id: Page; label: string; icon: React.ReactNode; premiumRequire
         <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
       </svg>
     ),
+    isNew: true,
   },
   {
     id: "network",
@@ -39,6 +46,7 @@ const navItems: { id: Page; label: string; icon: React.ReactNode; premiumRequire
       </svg>
     ),
     premiumRequired: true,
+    isNew: true,
   },
   {
     id: "gpu",
@@ -50,6 +58,7 @@ const navItems: { id: Page; label: string; icon: React.ReactNode; premiumRequire
       </svg>
     ),
     premiumRequired: true,
+    isNew: true,
   },
   {
     id: "fortnite",
@@ -60,6 +69,18 @@ const navItems: { id: Page; label: string; icon: React.ReactNode; premiumRequire
       </svg>
     ),
     premiumRequired: true,
+  },
+  {
+    id: "fortnite-advanced",
+    label: "Fortnite Avancé",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+        <circle cx="19" cy="5" r="3" />
+      </svg>
+    ),
+    premiumRequired: true,
+    isNew: true,
   },
   {
     id: "bios",
@@ -84,6 +105,48 @@ const navItems: { id: Page; label: string; icon: React.ReactNode; premiumRequire
     premiumRequired: true,
   },
   {
+    id: "inputlag",
+    label: "Input Lag Calc",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+      </svg>
+    ),
+    isNew: true,
+  },
+  {
+    id: "benchmark",
+    label: "Benchmark",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+      </svg>
+    ),
+    premiumRequired: true,
+    isNew: true,
+  },
+  {
+    id: "gameprofiles",
+    label: "Profils Jeux",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="2" y="6" width="20" height="12" rx="2"/><line x1="12" y1="6" x2="12" y2="18"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="10" x2="16" y2="14"/>
+      </svg>
+    ),
+    premiumRequired: true,
+    isNew: true,
+  },
+  {
+    id: "cleaner",
+    label: "Nettoyeur",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+      </svg>
+    ),
+    isNew: true,
+  },
+  {
     id: "about",
     label: "À propos",
     icon: (
@@ -103,6 +166,7 @@ export default function Sidebar({ currentPage, isPremium, onNavigate, onUnlockPr
         <div style={{ fontSize: "9px", color: "#333", letterSpacing: "0.12em", textTransform: "uppercase", padding: "0 12px 8px", fontWeight: 700 }}>
           Navigation
         </div>
+
         {navItems.map((item) => {
           const locked = item.premiumRequired && !isPremium;
           return (
@@ -114,13 +178,17 @@ export default function Sidebar({ currentPage, isPremium, onNavigate, onUnlockPr
             >
               <span>{item.icon}</span>
               <span style={{ flex: 1 }}>{item.label}</span>
+
+              {item.isNew && (
+                <span className="badge badge-new">NEW</span>
+              )}
               {locked && (
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2">
                   <rect x="3" y="11" width="18" height="11" rx="2" />
                   <path d="M7 11V7a5 5 0 0110 0v4" />
                 </svg>
               )}
-              {item.premiumRequired && isPremium && (
+              {item.premiumRequired && isPremium && !item.isNew && (
                 <span className="badge badge-premium" style={{ fontSize: "8px" }}>PRO</span>
               )}
             </div>
@@ -136,18 +204,18 @@ export default function Sidebar({ currentPage, isPremium, onNavigate, onUnlockPr
             margin: "8px",
             padding: "12px",
             borderRadius: "8px",
-            background: "rgba(255,107,0,0.08)",
-            border: "1px solid rgba(255,107,0,0.25)",
+            background: "var(--primary-dim)",
+            border: "1px solid var(--primary-border)",
             cursor: "pointer",
           }}
         >
-          <div style={{ fontSize: "11px", color: "#FF6B00", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "4px" }}>
+          <div style={{ fontSize: "11px", color: "var(--primary)", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "4px" }}>
             Passer Premium
           </div>
           <div style={{ fontSize: "10px", color: "#666", lineHeight: 1.4 }}>
             Déverrouillez tous les tweaks avancés
           </div>
-          <div style={{ marginTop: "8px", padding: "6px 10px", background: "#FF6B00", borderRadius: "6px", textAlign: "center", fontSize: "10px", fontWeight: 700, color: "white", letterSpacing: "0.05em" }}>
+          <div style={{ marginTop: "8px", padding: "6px 10px", background: "var(--primary)", borderRadius: "6px", textAlign: "center", fontSize: "10px", fontWeight: 700, color: "white", letterSpacing: "0.05em" }}>
             Entrer ma clé
           </div>
         </div>

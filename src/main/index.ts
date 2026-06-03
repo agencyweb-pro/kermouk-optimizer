@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, shell, Notification } from "electron";
 import { join } from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -77,7 +77,8 @@ function createWindow() {
 app.whenReady().then(() => {
   if (!fs.existsSync(SCRIPTS_DIR)) fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
 
-  createWindow();
+  const win = createWindow();
+  startMonitoring(win);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -257,6 +258,8 @@ $freq = [int]$cpuObj.CurrentClockSpeed
 $cpuName = [string]$cpuObj.Name
 $ramObj = Get-WmiObject Win32_OperatingSystem
 $ramUsed = [int][math]::Round(($ramObj.TotalVisibleMemorySize - $ramObj.FreePhysicalMemory) / $ramObj.TotalVisibleMemorySize * 100)
+$ramTotalGb = [math]::Round($ramObj.TotalVisibleMemorySize / 1048576, 1)
+$ramUsedGb  = [math]::Round(($ramObj.TotalVisibleMemorySize - $ramObj.FreePhysicalMemory) / 1048576, 1)
 $cpuTemp = -1
 try {
   $tz = Get-WmiObject MSAcpi_ThermalZoneTemperature -Namespace root/wmi | Select-Object -First 1
@@ -271,15 +274,17 @@ $gpuName = if ($gpuObj) { [string]$gpuObj.Name } else { 'Inconnu' }
 $gpuIsNvidia = ($gpuName -match 'NVIDIA')
 $cpuIsIntel = ($cpuName -match 'Intel')
 @{
-  cpuUsage = $cpu
-  cpuTemp = $cpuTemp
-  cpuFreq = $freq
-  gpuTemp = $gpuTemp
-  gpuUsage = $gpuUsage
-  ramUsage = $ramUsed
-  gpuName = $gpuName
+  cpuUsage   = $cpu
+  cpuTemp    = $cpuTemp
+  cpuFreq    = $freq
+  gpuTemp    = $gpuTemp
+  gpuUsage   = $gpuUsage
+  ramUsage   = $ramUsed
+  ramTotalGb = $ramTotalGb
+  ramUsedGb  = $ramUsedGb
+  gpuName    = $gpuName
   gpuIsNvidia = [bool]$gpuIsNvidia
-  cpuName = $cpuName
+  cpuName    = $cpuName
   cpuIsIntel = [bool]$cpuIsIntel
 } | ConvertTo-Json
 `;
@@ -363,6 +368,274 @@ try {
     return { ok: false, error: String(e) };
   }
 });
+
+// ─── IPC: Ping server ───────────────────────────────────────────────────────
+ipcMain.handle("ping-server", async (_e, host: string) => {
+  try {
+    const { stdout } = await execAsync(`ping -n 2 -w 2000 ${host}`, { timeout: 8000 });
+    const match = stdout.match(/[Tt]emps[=<](\d+)\s*ms|[Tt]ime[=<](\d+)\s*ms/);
+    const ms = match ? parseInt(match[1] || match[2] || "-1") : -1;
+    return { ok: ms >= 0, ms };
+  } catch {
+    return { ok: false, ms: -1 };
+  }
+});
+
+// ─── IPC: Apply Fortnite GameUserSettings.ini ────────────────────────────────
+ipcMain.handle("apply-fortnite-ini", async () => {
+  try {
+    const localApp = process.env.LOCALAPPDATA || join(os.homedir(), "AppData", "Local");
+    const iniPath = join(localApp, "FortniteGame", "Saved", "Config", "WindowsClient", "GameUserSettings.ini");
+
+    if (!fs.existsSync(iniPath)) {
+      return { ok: false, error: "Fichier GameUserSettings.ini introuvable. Lancez Fortnite au moins une fois." };
+    }
+
+    let content = fs.readFileSync(iniPath, "utf-8");
+
+    const settings: Record<string, string> = {
+      bShowFPS: "True",
+      FrameRateLimit: "0.000000",
+      ResolutionSizeX: "1920",
+      ResolutionSizeY: "1080",
+      FullscreenMode: "1",
+      "sg.ShadowQuality": "0",
+      "sg.GlobalIlluminationQuality": "0",
+      "sg.ReflectionQuality": "0",
+      "sg.AntiAliasingQuality": "0",
+      "sg.TextureQuality": "2",
+      "sg.EffectsQuality": "0",
+      "sg.PostProcessQuality": "0",
+      bUseVSync: "False",
+    };
+
+    for (const [key, value] of Object.entries(settings)) {
+      const escapedKey = key.replace(/\./g, "\\.");
+      const regex = new RegExp(`^${escapedKey}=.*$`, "gm");
+      if (regex.test(content)) {
+        content = content.replace(regex, `${key}=${value}`);
+      } else {
+        content += `\n${key}=${value}`;
+      }
+    }
+
+    fs.writeFileSync(iniPath, content, "utf-8");
+    return { ok: true };
+  } catch (e: unknown) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// ─── IPC: Clean Fortnite cache ───────────────────────────────────────────────
+ipcMain.handle("clean-fortnite-cache", async () => {
+  try {
+    const localApp = process.env.LOCALAPPDATA || join(os.homedir(), "AppData", "Local");
+    const cachePaths = [
+      join(localApp, "EpicGamesLauncher", "Saved", "webcache"),
+      join(localApp, "FortniteGame", "Saved", "webcache"),
+      join(localApp, "FortniteGame", "Saved", "PipelineCaches"),
+    ];
+
+    let deletedCount = 0;
+    for (const p of cachePaths) {
+      if (fs.existsSync(p)) {
+        try {
+          await execAsync(`rd /s /q "${p}"`, { timeout: 30000 });
+          deletedCount++;
+        } catch { /* ignore individual failures */ }
+      }
+    }
+
+    return { ok: true, deletedCount };
+  } catch (e: unknown) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// ─── IPC: Scan junk files ────────────────────────────────────────────────────
+ipcMain.handle("scan-junk", async () => {
+  const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+function Get-FolderSize($path) {
+  if (-not (Test-Path $path)) { return 0 }
+  (Get-ChildItem $path -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1MB
+}
+$env_temp = $env:TEMP
+$win_temp = "C:\\Windows\\Temp"
+$prefetch = "C:\\Windows\\Prefetch"
+$win_logs = "C:\\Windows\\System32\\winevt\\Logs"
+$epic = "$env:LOCALAPPDATA\\EpicGamesLauncher\\Saved\\webcache"
+$chrome = "$env:LOCALAPPDATA\\Google\\Chrome\\User Data\\Default\\Cache"
+$edge = "$env:LOCALAPPDATA\\Microsoft\\Edge\\User Data\\Default\\Cache"
+$ff = "$env:APPDATA\\Mozilla\\Firefox\\Profiles"
+@{
+  temp_user   = [int](Get-FolderSize $env_temp)
+  temp_win    = [int](Get-FolderSize $win_temp)
+  prefetch    = [int](Get-FolderSize $prefetch)
+  win_logs    = [int](Get-FolderSize $win_logs)
+  epic_cache  = [int](Get-FolderSize $epic)
+  chrome_cache = [int](Get-FolderSize $chrome)
+  edge_cache  = [int](Get-FolderSize $edge)
+  firefox_cache = [int](Get-FolderSize $ff)
+  dns_cache   = 0
+} | ConvertTo-Json
+`;
+  try {
+    const out = await runPs1(script, false, 20000);
+    return JSON.parse(out);
+  } catch {
+    return {};
+  }
+});
+
+// ─── IPC: Clean junk ─────────────────────────────────────────────────────────
+ipcMain.handle("clean-junk", async (_e, targetId: string) => {
+  const localApp = process.env.LOCALAPPDATA || join(os.homedir(), "AppData", "Local");
+  const appData = process.env.APPDATA || join(os.homedir(), "AppData", "Roaming");
+  const temp = process.env.TEMP || join(os.homedir(), "AppData", "Local", "Temp");
+
+  const targets: Record<string, string[]> = {
+    temp_user: [temp],
+    temp_win: ["C:\\Windows\\Temp"],
+    prefetch: ["C:\\Windows\\Prefetch"],
+    win_logs: ["C:\\Windows\\System32\\winevt\\Logs"],
+    epic_cache: [join(localApp, "EpicGamesLauncher", "Saved", "webcache")],
+    chrome_cache: [join(localApp, "Google", "Chrome", "User Data", "Default", "Cache")],
+    edge_cache: [join(localApp, "Microsoft", "Edge", "User Data", "Default", "Cache")],
+    firefox_cache: [join(appData, "Mozilla", "Firefox", "Profiles")],
+    dns_cache: [],
+  };
+
+  try {
+    if (targetId === "dns_cache") {
+      await execAsync("ipconfig /flushdns", { timeout: 5000 });
+      return { ok: true };
+    }
+
+    const paths = targets[targetId] || [];
+    for (const p of paths) {
+      if (fs.existsSync(p)) {
+        await execAsync(`rd /s /q "${p}" 2>nul`, { timeout: 15000 }).catch(() => {});
+        fs.mkdirSync(p, { recursive: true });
+      }
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// ─── IPC: Driver info ─────────────────────────────────────────────────────────
+ipcMain.handle("get-driver-info", async () => {
+  const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+$gpu = Get-WmiObject Win32_VideoController | Where-Object { $_.Name -notlike '*Microsoft*' } | Select-Object -First 1
+$gpuName = if ($gpu) { $gpu.Name } else { 'Inconnu' }
+$gpuDriver = if ($gpu) { $gpu.DriverVersion } else { 'N/A' }
+$isNvidia = ($gpuName -match 'NVIDIA')
+$isAmd = ($gpuName -match 'AMD|Radeon')
+@{
+  gpu = $gpuName
+  gpuVersion = $gpuDriver
+  isNvidia = [bool]$isNvidia
+  isAmd = [bool]$isAmd
+} | ConvertTo-Json
+`;
+  try {
+    const out = await runPs1(script, false, 8000);
+    return JSON.parse(out);
+  } catch {
+    return { gpu: "Inconnu", gpuVersion: "N/A", isNvidia: false, isAmd: false };
+  }
+});
+
+// ─── IPC: Apply streaming mode ────────────────────────────────────────────────
+ipcMain.handle("apply-streaming-mode", async () => {
+  const batContent = `@echo off
+:: Priorité processus streaming
+wmic process where name="obs64.exe" CALL setpriority "Above Normal" >nul 2>&1
+wmic process where name="FortniteClient-Win64-Shipping.exe" CALL setpriority "High Priority" >nul 2>&1
+
+:: Désactiver notifications Windows
+reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications" /v "ToastEnabled" /t REG_DWORD /d 0 /f >nul
+
+:: Optimiser bande passante upload (QoS)
+reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Psched" /v "NonBestEffortLimit" /t REG_DWORD /d 0 /f >nul
+
+:: OBS encoder settings via registry hint
+reg add "HKCU\\Software\\obs-studio" /v "KermoukStreamOptimized" /t REG_SZ /d "1" /f >nul 2>&1
+
+:: CPU affinity hints (commentaire de référence pour user)
+:: Fortnite: cores 0-5, OBS: cores 6-11 (configurer manuellement dans Task Manager)
+
+echo STREAMING_MODE_OK
+`;
+  const batPath = join(SCRIPTS_DIR, `streaming_${Date.now()}.bat`);
+  try {
+    fs.writeFileSync(batPath, batContent, "utf-8");
+    const cmd = `powershell -Command "Start-Process cmd.exe -ArgumentList '/c \\"${batPath.replace(/\\/g, "\\\\")}\\""' -Verb RunAs -Wait"`;
+    await execAsync(cmd, { timeout: 30000 });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  } finally {
+    if (fs.existsSync(batPath)) fs.unlinkSync(batPath);
+  }
+});
+
+// ─── IPC: Notifications toggle ────────────────────────────────────────────────
+let notificationsEnabled = true;
+ipcMain.handle("set-notifications-enabled", (_e, enabled: boolean) => {
+  notificationsEnabled = enabled;
+});
+
+// ─── Background: Smart monitoring every 30s ──────────────────────────────────
+function startMonitoring(win: BrowserWindow) {
+  setInterval(async () => {
+    if (!notificationsEnabled) return;
+    try {
+      const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+$cpu = [int]((Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average)
+$ram = Get-WmiObject Win32_OperatingSystem
+$ramPct = [int][math]::Round(($ram.TotalVisibleMemorySize - $ram.FreePhysicalMemory) / $ram.TotalVisibleMemorySize * 100)
+$disk = Get-PSDrive C | Select-Object -ExpandProperty Used
+$diskTotal = (Get-PSDrive C).Used + (Get-PSDrive C).Free
+$diskPct = [int][math]::Round($disk / $diskTotal * 100)
+$cpuTemp = -1
+try {
+  $tz = Get-WmiObject MSAcpi_ThermalZoneTemperature -Namespace root/wmi | Select-Object -First 1
+  if ($tz) { $cpuTemp = [int][math]::Round(($tz.CurrentTemperature / 10) - 273.15) }
+} catch {}
+@{ cpu=$cpu; ram=$ramPct; disk=$diskPct; cpuTemp=$cpuTemp } | ConvertTo-Json
+`;
+      const out = await runPs1(script, false, 6000);
+      const data = JSON.parse(out);
+
+      if (data.ram > 85) {
+        new Notification({
+          title: "KERMOUK — RAM saturée",
+          body: `RAM à ${data.ram}% — Utilise le Nettoyeur pour libérer de la mémoire !`,
+          icon: join(__dirname, "../../resources/icon.png"),
+        }).show();
+      } else if (data.cpuTemp > 85 && data.cpuTemp < 120) {
+        new Notification({
+          title: "KERMOUK — CPU chaud",
+          body: `Température CPU : ${data.cpuTemp}°C — Applique les tweaks de throttling ?`,
+          icon: join(__dirname, "../../resources/icon.png"),
+        }).show();
+      } else if (data.disk > 90) {
+        new Notification({
+          title: "KERMOUK — Disque plein",
+          body: `Disque C: à ${data.disk}% — Lance le Nettoyeur pour récupérer de l'espace.`,
+          icon: join(__dirname, "../../resources/icon.png"),
+        }).show();
+      }
+
+      win.webContents.send("hw-alert", data);
+    } catch { /* ignore monitoring errors */ }
+  }, 30000);
+}
 
 // ─── IPC: GPU Reset (NVIDIA) ─────────────────────────────────────────────────
 ipcMain.handle("reset-gpu-overclock", async () => {

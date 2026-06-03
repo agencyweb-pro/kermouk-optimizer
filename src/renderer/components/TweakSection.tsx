@@ -74,6 +74,8 @@ export default function TweakSection({ title, subtitle, tweaks, isPremium, openL
       addLog(`✓ ${result.message}`, "ok");
       result.applied?.forEach((name) => addLog(`  → ${name}`, "ok"));
       addLog("⚡ Redémarrez Windows pour finaliser les changements.", "warn");
+      const prev = parseInt(localStorage.getItem("kermouk_tweaks_count") || "0");
+      localStorage.setItem("kermouk_tweaks_count", String(prev + toApply.length));
     } else {
       addLog(`✗ Erreur: ${result.message}`, "error");
       if (result.error) addLog(`  Détails: ${result.error}`, "error");

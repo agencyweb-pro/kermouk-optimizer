@@ -59,6 +59,52 @@ export const FREE_TWEAKS: Tweak[] = [
     ],
     commands: [],
   },
+  {
+    id: "timer-resolution",
+    name: "Timer Resolution 0.5ms",
+    description: "Active la résolution de timer haute précision pour réduire la latence gaming et les micro-stutters.",
+    category: "free",
+    commands: [
+      "bcdedit /set useplatformtick yes",
+      "bcdedit /set disabledynamictick yes",
+    ],
+  },
+  {
+    id: "disable-hyperv",
+    name: "Désactivation Hyper-V",
+    description: "Désactive Hyper-V pour éliminer la couche de virtualisation et réduire la latence CPU.",
+    category: "free",
+    commands: ["bcdedit /set hypervisorlaunchtype off"],
+  },
+  {
+    id: "ssd-nvme-optimization",
+    name: "Optimisation SSD/NVMe",
+    description: "Désactive DisableLastAccess et EncryptPagingFile pour des temps d'accès SSD/NVMe optimaux.",
+    category: "free",
+    commands: [
+      "fsutil behavior set DisableLastAccess 1",
+      "fsutil behavior set EncryptPagingFile 0",
+    ],
+  },
+  {
+    id: "disable-defender-rt",
+    name: "Désactivation Defender Temps Réel",
+    description: "Désactive la protection temps réel Windows Defender pendant les sessions gaming pour libérer CPU.",
+    category: "free",
+    commands: [],
+    powershellCommands: ["Set-MpPreference -DisableRealtimeMonitoring $true"],
+  },
+  {
+    id: "mmcss-audio",
+    name: "MMCSS Audio Tweaks",
+    description: "Optimise le sous-système MMCSS (SystemResponsiveness=0, NetworkThrottlingIndex max) pour prioriser les jeux.",
+    category: "free",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 0 /f',
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile" /v NetworkThrottlingIndex /t REG_DWORD /d 4294967295 /f',
+    ],
+  },
 ];
 
 export const PREMIUM_TWEAKS: Tweak[] = [
@@ -98,6 +144,43 @@ export const PREMIUM_TWEAKS: Tweak[] = [
       'netsh interface ip add dns name="Ethernet" 1.0.0.1 index=2',
     ],
   },
+  {
+    id: "nagle-algorithm",
+    name: "Désactivation Algorithme Nagle",
+    description: "Désactive l'algorithme Nagle (TcpAckFrequency + TCPNoDelay) pour envoyer les paquets immédiatement sans délai.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces" /v TcpAckFrequency /t REG_DWORD /d 1 /f',
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces" /v TCPNoDelay /t REG_DWORD /d 1 /f',
+    ],
+  },
+  {
+    id: "mtu-gaming",
+    name: "MTU Optimisé Gaming (1472)",
+    description: "Configure le MTU optimal pour Fortnite afin d'éviter la fragmentation des paquets réseau.",
+    category: "premium",
+    commands: ['netsh interface ipv4 set subinterface "Ethernet" mtu=1472 store=persistent'],
+  },
+  {
+    id: "qos-fortnite",
+    name: "QoS Fortnite (Priorité Paquets)",
+    description: "Configure la qualité de service Windows (DSCP 46) pour prioriser les paquets de Fortnite.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\QoS\\Fortnite" /v Application /t REG_SZ /d "FortniteClient-Win64-Shipping.exe" /f',
+      'reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\QoS\\Fortnite" /v "DSCP Value" /t REG_SZ /d "46" /f',
+    ],
+  },
+  {
+    id: "interrupt-affinity",
+    name: "Interrupt Affinity Réseau",
+    description: "Désactive l'Interrupt Moderation sur l'adaptateur Ethernet pour réduire la latence réseau.",
+    category: "premium",
+    commands: [],
+    powershellCommands: ['Set-NetAdapterAdvancedProperty -Name "Ethernet" -RegistryKeyword "*InterruptModeration" -RegistryValue 0'],
+  },
   // ── GPU ─────────────────────────────────────────────────────────────────────
   {
     id: "gpu-tdr",
@@ -126,6 +209,43 @@ export const PREMIUM_TWEAKS: Tweak[] = [
     description: "Désactive le High Precision Event Timer pour réduire la latence système.",
     category: "premium",
     commands: ["bcdedit /deletevalue useplatformclock", "bcdedit /set disabledynamictick yes"],
+  },
+  {
+    id: "nvidia-ull",
+    name: "Ultra Low Latency Mode NVIDIA",
+    description: "Active le mode Ultra Low Latency NVIDIA pour minimiser l'Input Lag GPU via le registre.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "NvCplEnableNvidiaPcieGen1" /t REG_DWORD /d 0 /f',
+    ],
+  },
+  {
+    id: "nvidia-shader-cache",
+    name: "Shader Cache NVIDIA Désactivé",
+    description: "Désactive le cache de shaders NVIDIA pour éviter la surcharge disque lors des chargements.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKCU\\SOFTWARE\\NVIDIA Corporation\\Global\\NVTweak" /v "Shaders" /t REG_DWORD /d 0 /f',
+    ],
+  },
+  {
+    id: "nvidia-auto-boost",
+    name: "Texture Filtering Haute Performance",
+    description: "Désactive l'auto-boost NVIDIA pour des fréquences GPU stables et prévisibles.",
+    category: "premium",
+    commands: ["nvidia-smi --auto-boost-default=0"],
+  },
+  {
+    id: "nvidia-power-management",
+    name: "Power Management Maximum Performance",
+    description: "Force le GPU NVIDIA en mode Performance Maximum permanente via PerfLevelSrc.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "PerfLevelSrc" /t REG_DWORD /d 8738 /f',
+    ],
   },
   // ── CPU ─────────────────────────────────────────────────────────────────────
   {
@@ -222,7 +342,7 @@ export function generateBatScript(tweaks: Tweak[]): string {
     "@echo off",
     "chcp 65001 > nul",
     "echo ============================================",
-    "echo   KERMOUK OPTIMIZER v2.0 - Application Tweaks",
+    "echo   KERMOUK OPTIMIZER v2.2.0 - Application Tweaks",
     "echo ============================================",
     "echo.",
     "",

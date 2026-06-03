@@ -31,4 +31,24 @@ contextBridge.exposeInMainWorld("kermouk", {
   applyCpuTweaks: () => ipcRenderer.invoke("apply-cpu-performance-tweaks"),
   applyGpuOverclock: (profile: string) => ipcRenderer.invoke("apply-gpu-overclock", profile),
   resetGpuOverclock: () => ipcRenderer.invoke("reset-gpu-overclock"),
+
+  // Network ping
+  pingServer: (host: string) => ipcRenderer.invoke("ping-server", host),
+
+  // Fortnite advanced
+  applyFortniteIni: () => ipcRenderer.invoke("apply-fortnite-ini"),
+  cleanFortniteCache: () => ipcRenderer.invoke("clean-fortnite-cache"),
+
+  // Cleaner
+  scanJunk: () => ipcRenderer.invoke("scan-junk"),
+  cleanJunk: (id: string) => ipcRenderer.invoke("clean-junk", id),
+
+  // Driver info
+  getDriverInfo: () => ipcRenderer.invoke("get-driver-info"),
+
+  // Streaming mode
+  applyStreamingMode: () => ipcRenderer.invoke("apply-streaming-mode"),
+
+  // Notifications
+  setNotificationsEnabled: (enabled: boolean) => ipcRenderer.invoke("set-notifications-enabled", enabled),
 });

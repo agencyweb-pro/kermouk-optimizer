@@ -21,7 +21,7 @@ export default function SystemTweaks({ isPremium, openLicenseModal }: Props) {
   return (
     <TweakSection
       title="TWEAKS SYSTÈME"
-      subtitle="Optimisation du système Windows, services et mémoire pour le gaming"
+      subtitle="Optimisation Windows, timer, Hyper-V, SSD, Defender et MMCSS — 10 tweaks FREE inclus"
       tweaks={SYSTEM_TWEAKS}
       isPremium={isPremium}
       openLicenseModal={openLicenseModal}
