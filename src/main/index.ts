@@ -793,46 +793,67 @@ ipcMain.handle("set-notifications-enabled", (_e, enabled: boolean) => {
 
 // ─── Auto-updater ─────────────────────────────────────────────────────────────
 function initAutoUpdater(win: BrowserWindow) {
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  // Ne s'exécute que dans l'app packagée — évite les crashes en dev
+  if (!app.isPackaged) return;
+
+  try {
+    autoUpdater.logger = null; // désactive les logs internes qui peuvent crasher
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.allowDowngrade = false;
+  } catch {
+    return;
+  }
 
   const send = (type: string, payload?: Record<string, unknown>) => {
-    if (!win.isDestroyed()) win.webContents.send("update-status", { type, ...payload });
+    try {
+      if (!win.isDestroyed()) win.webContents.send("update-status", { type, ...payload });
+    } catch { /* ignorer si la fenêtre est fermée */ }
   };
 
   autoUpdater.on("checking-for-update", () => send("checking"));
 
   autoUpdater.on("update-available", (info) => {
     send("available", { version: info.version });
-    new Notification({
-      title: "KERMOUK — Mise à jour disponible",
-      body: `Version ${info.version} disponible — téléchargement en cours...`,
-      icon: join(__dirname, "../../resources/icon.png"),
-    }).show();
+    try {
+      new Notification({
+        title: "KERMOUK — Mise à jour disponible",
+        body: `Version ${info.version} disponible — téléchargement en cours...`,
+        icon: join(__dirname, "../../resources/icon.png"),
+      }).show();
+    } catch { /* notification optionnelle */ }
   });
 
   autoUpdater.on("update-not-available", () => send("up-to-date"));
 
-  autoUpdater.on("download-progress", (p) =>
-    send("downloading", { percent: Math.round(p.percent), bytesPerSecond: Math.round(p.bytesPerSecond) })
-  );
-
-  autoUpdater.on("update-downloaded", (info) => {
-    send("downloaded", { version: info.version });
+  autoUpdater.on("download-progress", (p) => {
+    try {
+      send("downloading", { percent: Math.round(p.percent), bytesPerSecond: Math.round(p.bytesPerSecond) });
+    } catch { /* ignorer */ }
   });
 
-  autoUpdater.on("error", (err) => {
-    send("error", { message: err.message });
-  });
+  autoUpdater.on("update-downloaded", (info) => send("downloaded", { version: info.version }));
 
-  // Vérification au lancement (délai 5s pour laisser l'app s'initialiser)
+  // Erreur silencieuse — ne doit jamais crasher l'app
+  autoUpdater.on("error", () => { /* silencieux */ });
+
+  // Vérification 10s après le lancement — toujours dans un try/catch
   setTimeout(() => {
-    autoUpdater.checkForUpdates().catch(() => { /* silencieux si pas de connexion */ });
-  }, 5000);
+    try {
+      autoUpdater.checkForUpdates().catch(() => { /* pas de connexion — silencieux */ });
+    } catch { /* silencieux */ }
+  }, 10000);
 }
 
 // ─── IPC: Update controls ─────────────────────────────────────────────────────
 ipcMain.handle("check-for-updates", async () => {
+  if (!app.isPackaged) {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("update-status", { type: "up-to-date" });
+    }
+    return;
+  }
   try {
     await autoUpdater.checkForUpdates();
   } catch {
@@ -844,7 +865,10 @@ ipcMain.handle("check-for-updates", async () => {
 });
 
 ipcMain.handle("install-update", () => {
-  autoUpdater.quitAndInstall(false, true);
+  if (!app.isPackaged) return;
+  try {
+    autoUpdater.quitAndInstall(false, true);
+  } catch { /* silencieux */ }
 });
 
 // ─── Background: Smart monitoring every 30s ──────────────────────────────────
