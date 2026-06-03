@@ -1,9 +1,5 @@
 node_modules/
-dist/win-unpacked/
-dist/*.exe
-dist/*.blockmap
-dist/*.zip
-dist/*.dmg
+dist/
 out/
 .env
 .env.local
