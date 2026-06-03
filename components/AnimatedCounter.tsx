@@ -20,7 +20,7 @@ function useCountUp(target: number, duration = 2000, start = false) {
 }
 
 const STATS = [
-  { value: 1247, suffix: "+", label: "Utilisateurs optimisés", prefix: "" },
+  { value: 2341, suffix: "+", label: "Utilisateurs optimisés", prefix: "" },
   { value: 40, suffix: "%", label: "FPS moyens gagnés", prefix: "+" },
   { value: 30, suffix: "ms", label: "Latence réduite", prefix: "-" },
   { value: 49, suffix: "/5", label: "Note utilisateurs", prefix: "4." },

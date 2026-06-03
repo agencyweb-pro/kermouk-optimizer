@@ -9,6 +9,15 @@ export const metadata: Metadata = {
 
 const ARTICLES = [
   {
+    slug: "gpedit-fps-fortnite",
+    title: "Comment utiliser gpedit.msc pour booster ses FPS Fortnite",
+    excerpt: "6 tweaks Group Policy avancés pour récupérer 20% de bande passante, désactiver VBS, Power Throttling et QoS DSCP 46 — les tweaks que 99% des joueurs ignorent.",
+    category: "GPO",
+    readTime: "11 min",
+    date: "3 juin 2026",
+    color: "#a855f7",
+  },
+  {
     slug: "booster-fps-fortnite",
     title: "Comment booster ses FPS sur Fortnite en 2025",
     excerpt: "Découvrez les meilleurs tweaks Windows, paramètres graphiques et optimisations réseau pour maximiser vos FPS sur Fortnite Chapter 5.",
@@ -49,7 +58,7 @@ export default function BlogPage() {
           </h1>
           <p className="text-gray-400 text-lg">Tutoriels, tweaks et conseils pour dominer sur PC</p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {ARTICLES.map(article => (
             <Link key={article.slug} href={`/blog/${article.slug}`} className="card-gaming p-6 block hover:border-orange/40 transition-colors group">
               <div className="flex items-center gap-2 mb-4">

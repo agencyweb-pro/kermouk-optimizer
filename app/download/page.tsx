@@ -3,9 +3,9 @@ import Script from "next/script";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Télécharger Kermouk Optimizer v2.3.0 — Gratuit & Premium",
+  title: "Télécharger Kermouk Optimizer v2.4.0 — Gratuit & Premium",
   description:
-    "Télécharge Kermouk Optimizer v2.3.0 gratuitement pour booster tes FPS sur Fortnite. Splash screen animé, thèmes couleurs, monitoring temps réel, 30+ tweaks. Compatible Windows 10 et 11.",
+    "Télécharge Kermouk Optimizer v2.4.0 gratuitement pour booster tes FPS sur Fortnite. Splash screen animé, thèmes couleurs, monitoring temps réel, 30+ tweaks. Compatible Windows 10 et 11.",
   alternates: { canonical: "https://kermouk.gg/download" },
 };
 
@@ -60,6 +60,7 @@ const PREMIUM_FEATURES = [
   "Désactivation 10+ services Windows",
   "Guide BIOS personnalisé",
   "Overclocking GPU nvidia-smi",
+  "Tweaks Group Policy avancés (gpedit) — bande passante +20%, VBS, Power Throttling, QoS",
 ];
 
 export default function DownloadPage() {
@@ -74,19 +75,19 @@ export default function DownloadPage() {
       <div className="relative max-w-5xl mx-auto px-6">
         {/* Header */}
         <div className="text-center mb-16">
-          <span className="badge-premium mb-4 inline-block">Téléchargement — v2.3.0</span>
+          <span className="badge-premium mb-4 inline-block">Téléchargement — v2.4.0</span>
           <h1 className="font-orbitron font-black text-4xl md:text-5xl mb-4">
             CHOISISSEZ VOTRE <span className="gradient-text">VERSION</span>
           </h1>
           <p className="text-gray-400 max-w-lg mx-auto">
-            KERMOUK OPTIMIZER v2.3.0 — Splash screen animé, thèmes, monitoring temps réel, 30+ tweaks.
+            KERMOUK OPTIMIZER v2.4.0 — Splash screen animé, thèmes, monitoring temps réel, 30+ tweaks.
             Compatible Windows 10 et 11.
           </p>
         </div>
 
-        {/* Nouveautés v2.3.0 */}
+        {/* Nouveautés v2.4.0 */}
         <div className="card-gaming p-6 mb-8 border border-orange/30 bg-gradient-to-r from-orange/5 to-transparent">
-          <h2 className="font-orbitron font-black text-xl mb-4 gradient-text">Nouveautés v2.3.0</h2>
+          <h2 className="font-orbitron font-black text-xl mb-4 gradient-text">Nouveautés v2.4.0</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm text-gray-300">
             {[
               { icon: "⏱️", text: "Calculateur Input Lag" },
@@ -135,11 +136,11 @@ export default function DownloadPage() {
 
             <div className="space-y-3">
               <a
-                href="https://github.com/tranoliviermatteopro-bot/kermouk-optimizer/releases/download/v2.3.0/KERMOUK%20OPTIMIZER%20Setup%202.3.0.exe"
+                href="https://github.com/tranoliviermatteopro-bot/kermouk-optimizer/releases/download/v2.4.0/KERMOUK%20OPTIMIZER%20Setup%202.4.0.exe"
                 download
                 className="btn-ghost block text-center w-full"
               >
-                Télécharger v2.3.0 FREE (.exe)
+                Télécharger v2.4.0 FREE (.exe)
               </a>
               <p className="text-xs text-center text-gray-600">
                 Windows 10/11 — 64-bit — ~50 MB
@@ -199,7 +200,7 @@ export default function DownloadPage() {
             <p className="text-gray-400 text-sm leading-relaxed">
               KERMOUK OPTIMIZER crée automatiquement un point de restauration Windows avant
               chaque session d&apos;optimisation. Tous les tweaks sont réversibles.
-              Nécessite des droits Administrateur. v2.3.0 — 30+ tweaks testés et validés.
+              Nécessite des droits Administrateur. v2.4.0 — 30+ tweaks testés et validés.
             </p>
           </div>
         </div>
