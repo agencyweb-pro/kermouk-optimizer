@@ -5,8 +5,89 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import * as fs from "fs";
 import * as os from "os";
+import * as crypto from "crypto";
+import Store from "electron-store";
+import { createClient } from "@supabase/supabase-js";
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const WS = require("ws");
+// Node.js 18 n'a pas de WebSocket natif dans le contexte Electron main
+if (!globalThis.WebSocket) (globalThis as Record<string, unknown>).WebSocket = WS;
 
 const execAsync = promisify(exec);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const store = new Store<Record<string, any>>();
+
+// ─── Supabase ─────────────────────────────────────────────────────────────────
+const SUPABASE_URL = "https://fwfbiotperunrdckqxcr.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3ZmJpb3RwZXJ1bnJkY2txeGNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3NDQ5ODcsImV4cCI6MjA5NjMyMDk4N30.LHCzSv1W_gpfwU3Oxa-0_5OgZIob0uNZ1lAV1P9zeY0";
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    storage: {
+      getItem: (key: string): string | null => {
+        const val = store.get(`supa_${key}`);
+        return typeof val === "string" ? val : null;
+      },
+      setItem: (key: string, value: string): void => { store.set(`supa_${key}`, value); },
+      removeItem: (key: string): void => { store.delete(`supa_${key}`); },
+    },
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+  realtime: { transport: WS },
+});
+
+interface SupabaseProfile {
+  id: string;
+  email: string;
+  is_premium: boolean;
+  referral_code: string;
+  referred_by: string | null;
+  referral_count: number;
+  created_at: string;
+}
+
+async function generateReferralCode(): Promise<string> {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let code = "";
+  let unique = false;
+  while (!unique) {
+    const suffix = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+    code = `KERM-${suffix}`;
+    const { data } = await supabase.from("profiles").select("id").eq("referral_code", code).maybeSingle();
+    unique = !data;
+  }
+  return code;
+}
+
+async function ensureProfile(userId: string, email: string, referralCode?: string): Promise<SupabaseProfile | null> {
+  const { data: existing } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+  if (existing) return existing as SupabaseProfile;
+
+  const code = await generateReferralCode();
+  const { data: profile } = await supabase.from("profiles").insert({
+    id: userId,
+    email,
+    referral_code: code,
+    referred_by: referralCode || null,
+  }).select().single();
+
+  if (referralCode && profile) {
+    const { data: referrer } = await supabase
+      .from("profiles").select("id, referral_count").eq("referral_code", referralCode).maybeSingle();
+    if (referrer) {
+      await supabase.from("referrals").insert({ referrer_id: referrer.id, referred_id: userId });
+      const newCount = ((referrer as SupabaseProfile).referral_count || 0) + 1;
+      const update: Record<string, unknown> = { referral_count: newCount };
+      if (newCount >= 5) update.is_premium = true;
+      await supabase.from("profiles").update(update).eq("id", referrer.id);
+    }
+  }
+
+  return (profile as SupabaseProfile) || null;
+}
 
 // Simple XOR-based obfuscation for license storage
 const LICENSE_KEY = "KERMOUK2024";
@@ -38,10 +119,11 @@ function loadLicense(): string | null {
   return key.length > 0 ? key : null;
 }
 
-const MASTER_KEY = "KERMOUK-MASTER-KEY-2024";
+const MASTER_HASH = "d8bacdc17a9074e9f1082a03a4521468dfab211507b942e71c1c3387ac591713";
 
 function validateLicenseKey(key: string): boolean {
-  if (key === MASTER_KEY) return true;
+  const hash = crypto.createHash("sha256").update(key).digest("hex");
+  if (hash === MASTER_HASH) return true;
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   return uuidRegex.test(key);
 }
@@ -116,6 +198,152 @@ ipcMain.handle("license-clear", () => {
   return { ok: true };
 });
 
+ipcMain.handle("license-activate", async (_e, key: string) => {
+  try {
+    const trimmed = key.trim().toUpperCase();
+
+    if (!/^KERM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(trimmed)) {
+      return { ok: false, message: "Format invalide. Attendu : KERM-XXXX-XXXX-XXXX" };
+    }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      return { ok: false, message: "Connecte-toi à ton compte avant d'activer une licence." };
+    }
+
+    const { data: license, error: selectError } = await supabase
+      .from("licenses")
+      .select("key, is_used, used_by")
+      .eq("key", trimmed)
+      .maybeSingle();
+
+    if (selectError) return { ok: false, message: "Erreur serveur : " + selectError.message };
+    if (!license) return { ok: false, message: "Clé introuvable. Vérifie ta clé." };
+
+    // Déjà activée par ce même compte → on réaccepte
+    if (license.is_used && license.used_by === session.user.id) {
+      saveLicense(trimmed);
+      store.set("supabase_premium", true);
+      const { data: profile } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+      return { ok: true, alreadyOwned: true, profile: profile || null };
+    }
+
+    if (license.is_used) {
+      return { ok: false, message: "Cette clé a déjà été activée par un autre compte." };
+    }
+
+    // Réclamer la clé (la policy RLS vérifie is_used = false côté Supabase)
+    const { error: claimError } = await supabase
+      .from("licenses")
+      .update({ is_used: true, used_by: session.user.id })
+      .eq("key", trimmed)
+      .eq("is_used", false);
+
+    if (claimError) return { ok: false, message: "Échec de l'activation : " + claimError.message };
+
+    // Passer le profil en premium
+    const { data: profile } = await supabase
+      .from("profiles")
+      .update({ is_premium: true })
+      .eq("id", session.user.id)
+      .select()
+      .single();
+
+    saveLicense(trimmed);
+    store.set("supabase_premium", true);
+
+    return { ok: true, profile: profile || null };
+  } catch (e) {
+    return { ok: false, message: String(e) };
+  }
+});
+
+// ─── IPC: Auth Supabase ──────────────────────────────────────────────────────
+ipcMain.handle("auth-signup", async (_e, { email, password, referralCode }: { email: string; password: string; referralCode?: string }) => {
+  try {
+    const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
+    if (authError) return { ok: false, message: authError.message };
+    if (!authData.user) return { ok: false, message: "Erreur lors de la création du compte." };
+    if (!authData.session) return { ok: false, message: "Confirme ton email puis connecte-toi." };
+
+    const profile = await ensureProfile(authData.user.id, authData.user.email || email, referralCode);
+    return { ok: true, user: { id: authData.user.id, email: authData.user.email }, profile };
+  } catch (e) {
+    return { ok: false, message: String(e) };
+  }
+});
+
+ipcMain.handle("auth-login", async (_e, { email, password }: { email: string; password: string }) => {
+  try {
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    if (authError) return { ok: false, message: authError.message };
+    if (!authData.user || !authData.session) return { ok: false, message: "Connexion échouée." };
+
+    const pendingReferral = store.get("pending_referral") as string | undefined;
+    const profile = await ensureProfile(authData.user.id, authData.user.email || email, pendingReferral);
+    if (pendingReferral) store.delete("pending_referral");
+
+    if (profile?.is_premium) {
+      const wasAlreadyPremium = store.get("supabase_premium") as boolean | undefined;
+      if (!wasAlreadyPremium) {
+        store.set("supabase_premium", true);
+        if ((profile.referral_count || 0) >= 5) {
+          try {
+            new Notification({
+              title: "KERMOUK OPTIMIZER",
+              body: "Tu as parrainé 5 amis — Premium débloqué !",
+            }).show();
+          } catch { /* optionnel */ }
+        }
+      }
+    } else {
+      store.delete("supabase_premium");
+    }
+
+    return { ok: true, user: { id: authData.user.id, email: authData.user.email }, profile };
+  } catch (e) {
+    return { ok: false, message: String(e) };
+  }
+});
+
+ipcMain.handle("auth-logout", async () => {
+  try {
+    await supabase.auth.signOut();
+    store.delete("supabase_premium");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: String(e) };
+  }
+});
+
+ipcMain.handle("auth-get-user", async () => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return { user: null, profile: null };
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+    return { user: { id: session.user.id, email: session.user.email }, profile: profile || null };
+  } catch {
+    return { user: null, profile: null };
+  }
+});
+
+ipcMain.handle("auth-check-session", async () => {
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error || !session?.user) return { ok: true, user: null, profile: null };
+
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+    const typedProfile = profile as SupabaseProfile | null;
+
+    if (typedProfile?.is_premium) store.set("supabase_premium", true);
+    else store.delete("supabase_premium");
+
+    return { ok: true, user: { id: session.user.id, email: session.user.email }, profile: typedProfile };
+  } catch {
+    return { ok: true, user: null, profile: null };
+  }
+});
+
 // ─── IPC: System info ───────────────────────────────────────────────────────
 ipcMain.handle("get-system-info", async () => {
   try {
@@ -179,8 +407,7 @@ ipcMain.handle("apply-tweaks", async (_e, batContent: string, tweakNames: string
   const batPath = join(SCRIPTS_DIR, `kermouk_tweaks_${Date.now()}.bat`);
 
   try {
-    // Write the batch file
-    fs.writeFileSync(batPath, batContent, "utf-8");
+    fs.writeFileSync(batPath, batContent, "latin1");
 
     // Execute as admin via PowerShell Start-Process RunAs
     const cmd = `powershell -Command "Start-Process cmd.exe -ArgumentList '/c \\"${batPath.replace(/\\/g, "\\\\")}\\""' -Verb RunAs -Wait"`;
@@ -331,7 +558,7 @@ echo OK
 `;
   const batPath = join(SCRIPTS_DIR, `cpu_tweaks_${Date.now()}.bat`);
   try {
-    fs.writeFileSync(batPath, batContent, "utf-8");
+    fs.writeFileSync(batPath, batContent, "latin1");
     const cmd = `powershell -Command "Start-Process cmd.exe -ArgumentList '/c \\"${batPath.replace(/\\/g, "\\\\")}\\""' -Verb RunAs -Wait"`;
     await execAsync(cmd, { timeout: 30000 });
     return { ok: true };
@@ -461,7 +688,6 @@ $ErrorActionPreference = 'SilentlyContinue'
 function Get-Reg($path, $name) {
   try { return (Get-ItemProperty -LiteralPath "Registry::$path" -Name $name -ErrorAction Stop).$name } catch { return $null }
 }
-$gpedit = Test-Path "$env:SystemRoot\\System32\\gpedit.msc"
 
 # VBS status
 $vbs = $false
@@ -472,21 +698,20 @@ try {
 
 # Tweak checks
 $bandwidth    = (Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Psched" "NonBestEffortLimit") -eq 0
-$qos          = (Test-Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\QoS\Fortnite")
+$qos          = (Test-Path "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\QoS\Fortnite") -and ((Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\QoS\Fortnite" "DSCP Value") -eq "46")
 $delivOpt     = (Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" "DODownloadMode") -eq 0
 $powerThrot   = (Get-Reg "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling" "PowerThrottlingOff") -eq 1
 $hags         = (Get-Reg "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "HwSchMode") -eq 2
 $fastStartup  = (Get-Reg "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Power" "HiberbootEnabled") -eq 0
 $vbsDisabled  = (Get-Reg "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\DeviceGuard" "EnableVirtualizationBasedSecurity") -eq 0
 $telemetry    = (Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\DataCollection" "AllowTelemetry") -eq 0
-$cortana      = (Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "AllowCortana") -eq 0
+$cortana      = ((Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "AllowCortana") -eq 0) -and ((Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "DisableWebSearch") -eq 1) -and ((Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Windows Search" "ConnectedSearchUseWeb") -eq 0)
 $onedrive     = (Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\OneDrive" "DisableFileSyncNGSC") -eq 1
 $winupdate    = (Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" "NoAutoUpdate") -eq 1
 $appCompat    = (Get-Reg "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\AppCompat" "AITEnable") -eq 0
 
 function s($b) { if ($b) { 'active' } else { 'inactive' } }
 @{
-  gpeditAvailable = [bool]$gpedit
   vbsActive = [bool]$vbs
   tweaks = @{
     bandwidth    = s $bandwidth
@@ -512,28 +737,6 @@ function s($b) { if ($b) { 'active' } else { 'inactive' } }
   }
 });
 
-// ─── IPC: GPO — install gpedit on Windows Home ───────────────────────────────
-ipcMain.handle("install-gpedit", async () => {
-  const script = `
-$ErrorActionPreference = 'SilentlyContinue'
-$packages = Get-ChildItem "$env:SystemRoot\\servicing\\Packages" -Filter "Microsoft-Windows-GroupPolicy-ClientExtensions-Package~3*.mum" | Select-Object -ExpandProperty FullName
-foreach ($pkg in $packages) {
-  dism /Online /NoRestart /Add-Package:$pkg | Out-Null
-}
-$packages2 = Get-ChildItem "$env:SystemRoot\\servicing\\Packages" -Filter "Microsoft-Windows-GroupPolicy-ClientTools-Package~3*.mum" | Select-Object -ExpandProperty FullName
-foreach ($pkg in $packages2) {
-  dism /Online /NoRestart /Add-Package:$pkg | Out-Null
-}
-Write-Host "DONE"
-`;
-  try {
-    await runPs1(script, true, 120000);
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: String(e) };
-  }
-});
-
 // ─── IPC: GPO — apply tweaks ─────────────────────────────────────────────────
 ipcMain.handle("apply-gpo-tweaks", async (_e, ids: string[]) => {
   const lines: string[] = ["@echo off"];
@@ -544,7 +747,7 @@ ipcMain.handle("apply-gpo-tweaks", async (_e, ids: string[]) => {
   if (ids.includes("qos_fortnite")) {
     const base = `HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\QoS\\Fortnite`;
     lines.push(
-      `reg add "${base}" /v "Application" /t REG_SZ /d "FortniteClient-Win64-Shipping.exe" /f >nul`,
+      `reg add "${base}" /v "Application Name" /t REG_SZ /d "FortniteClient-Win64-Shipping.exe" /f >nul`,
       `reg add "${base}" /v "DSCP Value" /t REG_SZ /d "46" /f >nul`,
       `reg add "${base}" /v "Local Port" /t REG_SZ /d "*" /f >nul`,
       `reg add "${base}" /v "Protocol" /t REG_SZ /d "*" /f >nul`,
@@ -608,9 +811,12 @@ ipcMain.handle("apply-gpo-tweaks", async (_e, ids: string[]) => {
   const batPath = join(SCRIPTS_DIR, `gpo_${Date.now()}.bat`);
 
   try {
-    fs.writeFileSync(batPath, batContent, "utf-8");
+    fs.writeFileSync(batPath, batContent, "latin1");
     const cmd = `powershell -Command "Start-Process cmd.exe -ArgumentList '/c \\"${batPath.replace(/\\/g, "\\\\")}\\""' -Verb RunAs -Wait"`;
     await execAsync(cmd, { timeout: 60000 });
+    const states = (store.get("tweak_status") as Record<string, boolean>) || {};
+    for (const id of ids) states[id] = true;
+    store.set("tweak_status", states);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };
@@ -643,14 +849,57 @@ echo OK
 `;
   const batPath = join(SCRIPTS_DIR, `gpo_restore_${Date.now()}.bat`);
   try {
-    fs.writeFileSync(batPath, batContent, "utf-8");
+    fs.writeFileSync(batPath, batContent, "latin1");
     const cmd = `powershell -Command "Start-Process cmd.exe -ArgumentList '/c \\"${batPath.replace(/\\/g, "\\\\")}\\""' -Verb RunAs -Wait"`;
     await execAsync(cmd, { timeout: 30000 });
+    const GPO_IDS = ["bandwidth","qos_fortnite","delivery_opt","power_throttling","hags","fast_startup","vbs","telemetry","cortana","onedrive","windows_update","app_compat"];
+    const states = (store.get("tweak_status") as Record<string, boolean>) || {};
+    for (const id of GPO_IDS) states[id] = false;
+    store.set("tweak_status", states);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };
   } finally {
     if (fs.existsSync(batPath)) fs.unlinkSync(batPath);
+  }
+});
+
+// ─── IPC: Tweak state persistence ────────────────────────────────────────────
+ipcMain.handle("get-tweak-states", () => {
+  return (store.get("tweak_status") as Record<string, boolean>) || {};
+});
+
+ipcMain.handle("set-tweak-state", (_e, id: string, active: boolean) => {
+  const states = (store.get("tweak_status") as Record<string, boolean>) || {};
+  states[id] = active;
+  store.set("tweak_status", states);
+});
+
+ipcMain.handle("reset-tweak-states", () => {
+  store.delete("tweak_status");
+});
+
+// ─── IPC: Check tweak registry status ────────────────────────────────────────
+ipcMain.handle("check-tweak-status", async () => {
+  const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+function Get-Reg($path, $name) {
+  try { return (Get-ItemProperty -LiteralPath "Registry::$path" -Name $name -ErrorAction Stop).$name } catch { return $null }
+}
+@{
+  power_throttling = [bool]((Get-Reg "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Power\\PowerThrottling" "PowerThrottlingOff") -eq 1)
+  telemetry        = [bool]((Get-Reg "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection" "AllowTelemetry") -eq 0)
+  hags             = [bool]((Get-Reg "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers" "HwSchMode") -eq 2)
+  fast_startup     = [bool]((Get-Reg "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power" "HiberbootEnabled") -eq 0)
+  delivery_opt     = [bool]((Get-Reg "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Windows\\DeliveryOptimization" "DODownloadMode") -eq 0)
+  onedrive         = [bool]((Get-Reg "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Windows\\OneDrive" "DisableFileSyncNGSC") -eq 1)
+} | ConvertTo-Json
+`;
+  try {
+    const out = await runPs1(script, false, 10000);
+    return JSON.parse(out) as Record<string, boolean>;
+  } catch {
+    return {};
   }
 });
 
@@ -774,7 +1023,7 @@ echo STREAMING_MODE_OK
 `;
   const batPath = join(SCRIPTS_DIR, `streaming_${Date.now()}.bat`);
   try {
-    fs.writeFileSync(batPath, batContent, "utf-8");
+    fs.writeFileSync(batPath, batContent, "latin1");
     const cmd = `powershell -Command "Start-Process cmd.exe -ArgumentList '/c \\"${batPath.replace(/\\/g, "\\\\")}\\""' -Verb RunAs -Wait"`;
     await execAsync(cmd, { timeout: 30000 });
     return { ok: true };
@@ -797,6 +1046,11 @@ function initAutoUpdater(win: BrowserWindow) {
   if (!app.isPackaged) return;
 
   try {
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: 'tranoliviermatteopro-bot',
+      repo: 'kermouk-optimizer'
+    });
     autoUpdater.logger = null; // désactive les logs internes qui peuvent crasher
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
@@ -847,20 +1101,18 @@ function initAutoUpdater(win: BrowserWindow) {
 
 // ─── IPC: Update controls ─────────────────────────────────────────────────────
 ipcMain.handle("check-for-updates", async () => {
+  const win = BrowserWindow.getAllWindows()[0];
+  const send = (payload: Record<string, unknown>) => {
+    if (win && !win.isDestroyed()) win.webContents.send("update-status", payload);
+  };
   if (!app.isPackaged) {
-    const win = BrowserWindow.getAllWindows()[0];
-    if (win && !win.isDestroyed()) {
-      win.webContents.send("update-status", { type: "up-to-date" });
-    }
+    send({ type: "no-server" });
     return;
   }
   try {
     await autoUpdater.checkForUpdates();
   } catch {
-    const win = BrowserWindow.getAllWindows()[0];
-    if (win && !win.isDestroyed()) {
-      win.webContents.send("update-status", { type: "error", message: "Impossible de vérifier les mises à jour" });
-    }
+    send({ type: "no-server" });
   }
 });
 
@@ -871,53 +1123,544 @@ ipcMain.handle("install-update", () => {
   } catch { /* silencieux */ }
 });
 
-// ─── Background: Smart monitoring every 30s ──────────────────────────────────
+// ─── Background: Smart monitoring — CPU/RAM every 5s, temp every 15s ─────────
 function startMonitoring(win: BrowserWindow) {
+  let tickCount = 0;
+  let lastTemp = -1;
+  let tempPolling = false;
+
   setInterval(async () => {
     if (!notificationsEnabled) return;
-    try {
-      const script = `
-$ErrorActionPreference = 'SilentlyContinue'
-$cpu = [int]((Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average)
-$ram = Get-WmiObject Win32_OperatingSystem
-$ramPct = [int][math]::Round(($ram.TotalVisibleMemorySize - $ram.FreePhysicalMemory) / $ram.TotalVisibleMemorySize * 100)
-$disk = Get-PSDrive C | Select-Object -ExpandProperty Used
-$diskTotal = (Get-PSDrive C).Used + (Get-PSDrive C).Free
-$diskPct = [int][math]::Round($disk / $diskTotal * 100)
-$cpuTemp = -1
-try {
-  $tz = Get-WmiObject MSAcpi_ThermalZoneTemperature -Namespace root/wmi | Select-Object -First 1
-  if ($tz) { $cpuTemp = [int][math]::Round(($tz.CurrentTemperature / 10) - 273.15) }
-} catch {}
-@{ cpu=$cpu; ram=$ramPct; disk=$diskPct; cpuTemp=$cpuTemp } | ConvertTo-Json
-`;
-      const out = await runPs1(script, false, 6000);
-      const data = JSON.parse(out);
+    tickCount++;
 
-      if (data.ram > 85) {
+    try {
+      // Fast wmic poll every 5s
+      const { stdout: cpuOut } = await execAsync("wmic cpu get LoadPercentage /value", { timeout: 3000 });
+      const { stdout: ramOut } = await execAsync("wmic OS get TotalVisibleMemorySize,FreePhysicalMemory /value", { timeout: 3000 });
+
+      const cpu = parseInt(cpuOut.match(/LoadPercentage=(\d+)/)?.[1] ?? "0");
+      const totalKb = parseInt(ramOut.match(/TotalVisibleMemorySize=(\d+)/)?.[1] ?? "1");
+      const freeKb = parseInt(ramOut.match(/FreePhysicalMemory=(\d+)/)?.[1] ?? "0");
+      const ram = Math.round((totalKb - freeKb) / totalKb * 100);
+
+      // Detect Fortnite running
+      let fortniteRunning = false;
+      try {
+        const { stdout: tasks } = await execAsync('tasklist /FI "IMAGENAME eq FortniteClient-Win64-Shipping.exe" /FO CSV /NH', { timeout: 2000 });
+        fortniteRunning = tasks.includes("FortniteClient");
+      } catch { /* ignore */ }
+
+      // Temperature via PS1 WMI every 15s (every 3rd tick), non-concurrent
+      if (tickCount % 3 === 0 && !tempPolling) {
+        tempPolling = true;
+        runPs1(
+          `$ErrorActionPreference='SilentlyContinue'
+$t=-1
+try{$tz=Get-WmiObject MSAcpi_ThermalZoneTemperature -Namespace root/wmi|Select-Object -First 1;if($tz){$t=[int][math]::Round(($tz.CurrentTemperature/10)-273.15)}}catch{}
+Write-Host $t`,
+          false, 5000
+        ).then((out) => {
+          lastTemp = parseInt(out.trim()) || -1;
+          tempPolling = false;
+        }).catch(() => { tempPolling = false; });
+      }
+
+      const data = { cpu, ram, cpuTemp: lastTemp, disk: -1, fortniteRunning };
+
+      if (ram > 90) {
         new Notification({
-          title: "KERMOUK — RAM saturée",
-          body: `RAM à ${data.ram}% — Utilise le Nettoyeur pour libérer de la mémoire !`,
+          title: "KERMOUK - RAM saturee",
+          body: `RAM a ${ram}% - Lance le Nettoyeur pour liberer de la memoire !`,
           icon: join(__dirname, "../../resources/icon.png"),
         }).show();
-      } else if (data.cpuTemp > 85 && data.cpuTemp < 120) {
+      } else if (lastTemp > 85 && lastTemp < 120) {
         new Notification({
-          title: "KERMOUK — CPU chaud",
-          body: `Température CPU : ${data.cpuTemp}°C — Applique les tweaks de throttling ?`,
-          icon: join(__dirname, "../../resources/icon.png"),
-        }).show();
-      } else if (data.disk > 90) {
-        new Notification({
-          title: "KERMOUK — Disque plein",
-          body: `Disque C: à ${data.disk}% — Lance le Nettoyeur pour récupérer de l'espace.`,
+          title: "KERMOUK - CPU chaud",
+          body: `Temperature CPU : ${lastTemp}C - Applique les tweaks de throttling ?`,
           icon: join(__dirname, "../../resources/icon.png"),
         }).show();
       }
 
-      win.webContents.send("hw-alert", data);
+      if (!win.isDestroyed()) win.webContents.send("hw-alert", data);
     } catch { /* ignore monitoring errors */ }
-  }, 30000);
+  }, 5000);
 }
+
+// ─── Helper: assets path (dev vs packaged) ───────────────────────────────────
+function getAssetsPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, "assets")
+    : join(__dirname, "../../resources/assets");
+}
+
+// ─── IPC: Detect Nvidia Profile Inspector ────────────────────────────────────
+ipcMain.handle("detect-nvidia-inspector", async () => {
+  // Priorité : NVIDIA Profile Inspector (outil actuel) > NVIDIA Inspector (legacy)
+  const exeNames = ["nvidiaProfileInspector.exe", "nvidiaInspector.exe"];
+  const baseDirs = [
+    "C:\\Program Files\\NVIDIA Profile Inspector",
+    "C:\\Program Files (x86)\\NVIDIA Profile Inspector",
+    "C:\\Program Files\\NVIDIA Inspector",
+    "C:\\Program Files (x86)\\NVIDIA Inspector",
+    join(os.homedir(), "Downloads"),
+    join(os.homedir(), "Downloads", "NVIDIA Profile Inspector"),
+    join(os.homedir(), "Downloads", "NVIDIA Inspector"),
+    join(os.homedir(), "Desktop"),
+    join(os.homedir(), "Desktop", "NVIDIA Profile Inspector"),
+    join(os.homedir(), "Desktop", "NVIDIA Inspector"),
+    "C:\\Tools",
+  ];
+  for (const exe of exeNames) {
+    for (const dir of baseDirs) {
+      const p = join(dir, exe);
+      if (fs.existsSync(p)) return { found: true, path: p };
+    }
+    try {
+      const { stdout } = await execAsync(`where ${exe} 2>nul`, { timeout: 5000 });
+      const p = stdout.trim().split("\n")[0].trim();
+      if (p && fs.existsSync(p)) return { found: true, path: p };
+    } catch { /* not in PATH */ }
+  }
+  return { found: false, path: null };
+});
+
+// ─── IPC: Apply Nvidia Profile Inspector profile ──────────────────────────────
+ipcMain.handle("apply-nvidia-profile", async (_e, profileFilename: string, inspectorPath: string) => {
+  try {
+    const src = join(getAssetsPath(), profileFilename);
+    if (!fs.existsSync(src)) return { ok: false, error: `Profil introuvable : ${src}` };
+    if (!fs.existsSync(inspectorPath)) return { ok: false, error: "nvidiaProfileInspector.exe introuvable." };
+    const tempProfile = join(SCRIPTS_DIR, profileFilename);
+    fs.copyFileSync(src, tempProfile);
+    // NVIDIA Profile Inspector utilise -silentImport ; l'ancien Inspector utilisait -importSettings
+    const isProfileInspector = inspectorPath.toLowerCase().includes("profileinspector");
+    const flag = isProfileInspector ? "-silentImport" : "-importSettings";
+    const cmd = `"${inspectorPath}" ${flag} "${tempProfile}"`;
+    await execAsync(cmd, { timeout: 30000 });
+    return { ok: true };
+  } catch (e: unknown) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// ─── IPC: Apply Pack Complet Fortnite ────────────────────────────────────────
+ipcMain.handle("apply-pack-complet", async () => {
+  const bat = `@echo off
+setlocal EnableDelayedExpansion
+
+echo [1/10] Services Windows...
+sc config "SysMain" start= auto >nul 2>&1
+sc start "SysMain" >nul 2>&1
+for %%S in (DiagTrack dmwappushservice MapsBroker RetailDemo XblAuthManager XblGameSave XboxGipSvc XboxNetApiSvc WerSvc Fax RemoteRegistry WMPNetworkSvc lfsvc wisvc PcaSvc) do (
+  sc stop "%%S" >nul 2>&1
+  sc config "%%S" start= disabled >nul 2>&1
+)
+for %%S in (PrintNotify WSearch) do (
+  sc stop "%%S" >nul 2>&1
+  sc config "%%S" start= manual >nul 2>&1
+)
+
+echo [2/10] Memoire et pagefile...
+powershell -NoProfile -Command "Disable-MMAgent -MemoryCompression" >nul 2>&1
+fsutil behavior set memoryusage 1 >nul 2>&1
+fsutil behavior set disable8dot3 1 >nul 2>&1
+fsutil behavior set disablelastaccess 1 >nul 2>&1
+fsutil behavior set mftzone 2 >nul 2>&1
+wmic computersystem where name="%computername%" set AutomaticManagedPagefile=False >nul 2>&1
+wmic pagefileset where name="C:\\pagefile.sys" set InitialSize=4096,MaximumSize=4096 >nul 2>&1
+del /f /q "%SystemRoot%\\Prefetch\\*.pf" >nul 2>&1
+
+echo [3/10] Priorite CPU Fortnite...
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 38 /f >nul
+reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\FortniteClient-Win64-Shipping.exe\\PerfOptions" /v CpuPriorityClass /t REG_DWORD /d 3 /f >nul
+reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\FortniteClient-Win64-Shipping.exe\\PerfOptions" /v IoPriority /t REG_DWORD /d 3 /f >nul
+reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\EpicGamesLauncher.exe\\PerfOptions" /v CpuPriorityClass /t REG_DWORD /d 2 /f >nul
+
+echo [4/10] Effets visuels...
+reg add "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 2 /f >nul
+reg add "HKCU\\Control Panel\\Desktop" /v MenuShowDelay /t REG_SZ /d 0 /f >nul
+reg add "HKCU\\Control Panel\\Desktop" /v DragFullWindows /t REG_SZ /d 0 /f >nul
+reg add "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced" /v TaskbarAnimations /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f >nul
+
+echo [5/10] Game Bar et DVR...
+reg add "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\GameDVR" /v AppCaptureEnabled /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\\System\\GameConfigStore" /v GameDVR_Enabled /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\\System\\GameConfigStore" /v GameDVR_FSEBehaviorMode /t REG_DWORD /d 2 /f >nul
+reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" /v AllowGameDVR /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\\SOFTWARE\\Microsoft\\GameBar" /v UseNexusForGameBarEnabled /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\\SOFTWARE\\Microsoft\\GameBar" /v AllowAutoGameMode /t REG_DWORD /d 1 /f >nul
+reg add "HKCU\\SOFTWARE\\Microsoft\\GameBar" /v AutoGameModeEnabled /t REG_DWORD /d 1 /f >nul
+
+echo [6/10] Timer et GPU scheduling...
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers" /v HwSchMode /t REG_DWORD /d 2 /f >nul
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers\\Scheduler" /v EnablePreemption /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile" /v NetworkThrottlingIndex /t REG_DWORD /d 4294967295 /f >nul
+reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games" /v "GPU Priority" /t REG_DWORD /d 8 /f >nul
+reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games" /v Priority /t REG_DWORD /d 6 /f >nul
+reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games" /v "Scheduling Category" /t REG_SZ /d High /f >nul
+reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games" /v "SFIO Priority" /t REG_SZ /d High /f >nul
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\kernel" /v GlobalTimerResolutionRequests /t REG_DWORD /d 1 /f >nul
+
+echo [7/10] Reseau gaming...
+netsh int tcp set global autotuninglevel=disabled >nul 2>&1
+netsh int tcp set global rss=enabled >nul 2>&1
+netsh int tcp set global chimney=disabled >nul 2>&1
+netsh int tcp set global ecncapability=disabled >nul 2>&1
+netsh int tcp set global timestamps=disabled >nul 2>&1
+netsh int tcp set heuristics disabled >nul 2>&1
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters" /v DefaultTTL /t REG_DWORD /d 64 /f >nul
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters" /v MaxUserPort /t REG_DWORD /d 65534 /f >nul
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters" /v TcpTimedWaitDelay /t REG_DWORD /d 30 /f >nul
+reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Psched" /v NonBestEffortLimit /t REG_DWORD /d 0 /f >nul
+netsh interface teredo set state disabled >nul 2>&1
+netsh interface 6to4 set state disabled >nul 2>&1
+netsh interface isatap set state disabled >nul 2>&1
+netsh winsock reset >nul 2>&1
+ipconfig /flushdns >nul 2>&1
+
+echo [8/10] Tweaks registre gaming...
+reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection" /v AllowTelemetry /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU" /v NoAutoUpdate /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU" /v AUOptions /t REG_DWORD /d 2 /f >nul
+reg add "HKCU\\Control Panel\\Mouse" /v MouseSpeed /t REG_SZ /d 0 /f >nul
+reg add "HKCU\\Control Panel\\Mouse" /v MouseThreshold1 /t REG_SZ /d 0 /f >nul
+reg add "HKCU\\Control Panel\\Mouse" /v MouseThreshold2 /t REG_SZ /d 0 /f >nul
+reg add "HKCU\\Control Panel\\Keyboard" /v KeyboardDelay /t REG_SZ /d 0 /f >nul
+reg add "HKCU\\Control Panel\\Keyboard" /v KeyboardSpeed /t REG_SZ /d 31 /f >nul
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management" /v FeatureSettingsOverride /t REG_DWORD /d 3 /f >nul
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management" /v FeatureSettingsOverrideMask /t REG_DWORD /d 3 /f >nul
+
+echo [9/10] Taches planifiees...
+schtasks /Change /TN "\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser" /Disable >nul 2>&1
+schtasks /Change /TN "\\Microsoft\\Windows\\Application Experience\\ProgramDataUpdater" /Disable >nul 2>&1
+schtasks /Change /TN "\\Microsoft\\Windows\\Customer Experience Improvement Program\\Consolidator" /Disable >nul 2>&1
+schtasks /Change /TN "\\Microsoft\\Windows\\Customer Experience Improvement Program\\UsbCeip" /Disable >nul 2>&1
+schtasks /Change /TN "\\Microsoft\\Windows\\Maintenance\\WinSAT" /Disable >nul 2>&1
+schtasks /Change /TN "\\Microsoft\\Windows\\WindowsErrorReporting\\QueueReporting" /Disable >nul 2>&1
+schtasks /Change /TN "\\Microsoft\\Windows\\XblGameSave\\XblGameSaveTask" /Disable >nul 2>&1
+
+echo [10/10] Plan alimentation et disque SSD...
+powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 >nul 2>&1
+for /f "tokens=4 delims= " %%G in ('powercfg /list ^| findstr /i "Ultimate"') do set "UGUID=%%G"
+if defined UGUID (
+  powercfg /setactive !UGUID! >nul 2>&1
+) else (
+  powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c >nul 2>&1
+)
+powercfg /change standby-timeout-ac 0 >nul 2>&1
+fsutil behavior set disableDeleteNotify 0 >nul 2>&1
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters" /v EnablePrefetcher /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters" /v EnableSuperfetch /t REG_DWORD /d 0 /f >nul
+
+echo PACK_COMPLET_OK
+endlocal
+`;
+  const batPath = join(SCRIPTS_DIR, `pack_complet_${Date.now()}.bat`);
+  try {
+    fs.writeFileSync(batPath, bat, "latin1");
+    const cmd = `powershell -Command "Start-Process cmd.exe -ArgumentList '/c \\"${batPath.replace(/\\/g, "\\\\")}\\""' -Verb RunAs -Wait"`;
+    await execAsync(cmd, { timeout: 180000 });
+    return { ok: true };
+  } catch (e: unknown) {
+    return { ok: false, error: String(e) };
+  } finally {
+    if (fs.existsSync(batPath)) fs.unlinkSync(batPath);
+  }
+});
+
+// ─── IPC: Generate system report ─────────────────────────────────────────────
+ipcMain.handle("generate-system-report", async () => {
+  try {
+    const desktop = join(os.homedir(), "Desktop");
+    const ts = new Date().toISOString().replace(/[T:.]/g, "-").slice(0, 17);
+    const reportDir = join(desktop, `KERMOUK_RAPPORT_${ts}`);
+    fs.mkdirSync(reportDir, { recursive: true });
+
+    const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+$dir = '${reportDir.replace(/\\/g, "\\\\")}'
+$out = "KERMOUK OPTIMIZER v2.4.0 - Rapport systeme\\nGenere le $(Get-Date)\\n\\n"
+
+$out += "=== PLAN D'ALIMENTATION ===\\n"
+$out += (powercfg /list 2>\\$null) + "\\n"
+$out += "Actif : " + (powercfg /getactivescheme 2>\\$null) + "\\n\\n"
+
+$out += "=== SERVICES GAMING ===\\n"
+foreach (\\$svc in @("SysMain","DiagTrack","XblGameSave","WerSvc","WSearch","XboxGipSvc","GameInput","dmwappushservice")) {
+  try {
+    \\$s = Get-Service \\$svc -EA Stop
+    \\$out += "\\$('\\$svc'.PadRight(25)) \\$(\\$s.Status.ToString().PadRight(10)) \\$(\\$s.StartType)\\n"
+  } catch { \\$out += "\\$('\\$svc'.PadRight(25)) Introuvable\\n" }
+}
+\\$out += "\\n"
+
+\\$out += "=== GPU ===\\n"
+\\$gpu = Get-WmiObject Win32_VideoController | Where-Object { \\$_.Name -notlike '*Microsoft*' } | Select-Object -First 1
+if (\\$gpu) {
+  \\$out += "Nom    : \\$(\\$gpu.Name)\\n"
+  \\$out += "Driver : \\$(\\$gpu.DriverVersion)\\n"
+  \\$out += "VRAM   : \\$([math]::Round(\\$gpu.AdapterRAM / 1GB, 1)) GB\\n"
+}
+try { \\$out += "Temp   : \\$((& nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits 2>\\$null).Trim())C\\n" } catch {}
+\\$out += "\\n"
+
+\\$out += "=== RESEAU (TCP) ===\\n"
+try { \\$out += (netsh int tcp show global 2>\\$null) + "\\n" } catch {}
+
+\\$out += "=== MEMOIRE ===\\n"
+\\$ram = Get-WmiObject Win32_OperatingSystem
+\\$out += "RAM Totale : \\$([math]::Round(\\$ram.TotalVisibleMemorySize / 1MB, 1)) GB\\n"
+\\$out += "RAM Libre  : \\$([math]::Round(\\$ram.FreePhysicalMemory / 1MB, 1)) GB\\n"
+try {
+  \\$pf = Get-WmiObject Win32_PageFileUsage | Select-Object -First 1
+  if (\\$pf) { \\$out += "Pagefile   : \\$(\\$pf.AllocatedBaseSize) MB (utilise: \\$(\\$pf.CurrentUsage) MB)\\n" }
+} catch {}
+\\$out += "\\n"
+
+\\$out += "=== TWEAKS REGISTRE ===\\n"
+function Get-Reg(\\$p, \\$n) { try { return (Get-ItemProperty "Registry::$\\$p" -Name \\$n -EA Stop).\\$n } catch { return 'N/A' } }
+\\$out += "Win32PrioritySeparation : \\$(Get-Reg 'HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl' 'Win32PrioritySeparation')\\n"
+\\$out += "HAGS (HwSchMode)        : \\$(Get-Reg 'HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers' 'HwSchMode')\\n"
+\\$out += "SystemResponsiveness    : \\$(Get-Reg 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile' 'SystemResponsiveness')\\n"
+\\$out += "NetworkThrottlingIndex  : \\$(Get-Reg 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile' 'NetworkThrottlingIndex')\\n"
+\\$out += "GlobalTimerResolution   : \\$(Get-Reg 'HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\kernel' 'GlobalTimerResolutionRequests')\\n"
+\\$out += "GameDVR_Enabled         : \\$(Get-Reg 'HKEY_CURRENT_USER\\System\\GameConfigStore' 'GameDVR_Enabled')\\n"
+
+\\$out | Out-File -FilePath "\\$dir\\rapport_systeme.txt" -Encoding UTF8
+Write-Host "DONE"
+`;
+    await runPs1(script, false, 30000);
+
+    // Générer RESTAURER_TWEAKS.bat
+    const restoreBat = `@echo off
+title KERMOUK - RESTAURATION TWEAKS
+
+net session >nul 2>&1
+if %errorlevel% neq 0 (echo [ERREUR] Admin requis. & pause & exit /b 1)
+
+echo Restauration parametres Windows defaut...
+
+sc config "DiagTrack" start= auto >nul 2>&1 & sc start "DiagTrack" >nul 2>&1
+sc config "XblGameSave" start= auto >nul 2>&1
+
+powershell -NoProfile -Command "Enable-MMAgent -MemoryCompression" >nul 2>&1
+fsutil behavior set memoryusage 1 >nul 2>&1
+wmic computersystem where name="%computername%" set AutomaticManagedPagefile=True >nul 2>&1
+
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 2 /f >nul
+reg delete "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\FortniteClient-Win64-Shipping.exe\\PerfOptions" /f >nul 2>&1
+
+reg add "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\\Control Panel\\Desktop" /v MenuShowDelay /t REG_SZ /d 400 /f >nul
+reg add "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced" /v TaskbarAnimations /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize" /v EnableTransparency /t REG_DWORD /d 1 /f >nul
+
+reg add "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\GameDVR" /v AppCaptureEnabled /t REG_DWORD /d 1 /f >nul
+reg add "HKCU\\System\\GameConfigStore" /v GameDVR_Enabled /t REG_DWORD /d 1 /f >nul
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" /v AllowGameDVR /f >nul 2>&1
+
+netsh int tcp set global autotuninglevel=normal >nul 2>&1
+netsh int tcp set global ecncapability=enabled >nul 2>&1
+netsh int tcp set global timestamps=enabled >nul 2>&1
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Psched" /v NonBestEffortLimit /f >nul 2>&1
+
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection" /v AllowTelemetry /f >nul 2>&1
+reg delete "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU" /v NoAutoUpdate /f >nul 2>&1
+reg add "HKCU\\Control Panel\\Mouse" /v MouseSpeed /t REG_SZ /d 1 /f >nul
+reg add "HKCU\\Control Panel\\Mouse" /v MouseThreshold1 /t REG_SZ /d 6 /f >nul
+reg add "HKCU\\Control Panel\\Mouse" /v MouseThreshold2 /t REG_SZ /d 10 /f >nul
+
+reg delete "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\kernel" /v GlobalTimerResolutionRequests /f >nul 2>&1
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers\\Scheduler" /v EnablePreemption /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters" /v EnablePrefetcher /t REG_DWORD /d 3 /f >nul
+reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters" /v EnableSuperfetch /t REG_DWORD /d 3 /f >nul
+
+powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e >nul 2>&1
+
+echo [OK] Restauration terminee. Redemarrez le PC.
+pause
+`;
+    const restorePath = join(reportDir, "RESTAURER_TWEAKS.bat");
+    fs.writeFileSync(restorePath, restoreBat, "latin1");
+
+    const reportPath = join(reportDir, "rapport_systeme.txt");
+    const content = fs.existsSync(reportPath) ? fs.readFileSync(reportPath, "utf-8") : "";
+    return { ok: true, reportPath: reportDir, content };
+  } catch (e: unknown) {
+    return { ok: false, reportPath: "", content: "", error: String(e) };
+  }
+});
+
+// ─── IPC: Export PC optimizations ────────────────────────────────────────────
+ipcMain.handle("export-pc-optimizations", async () => {
+  try {
+    const desktop = join(os.homedir(), "Desktop");
+    const ts = new Date().toISOString().replace(/[T:.]/g, "-").slice(0, 17);
+    const exportDir = join(desktop, `KERMOUK_EXPORT_${ts}`);
+    fs.mkdirSync(exportDir, { recursive: true });
+    const edir = exportDir.replace(/\\/g, "\\\\");
+
+    const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+$dir = '${edir}'
+
+# Logiciels installés
+$apps = Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* |
+  Where-Object DisplayName |
+  Select-Object DisplayName, DisplayVersion, Publisher, InstallDate |
+  Sort-Object DisplayName
+$apps | Export-Csv "$dir\\logiciels_installes.csv" -NoTypeInformation -Encoding UTF8
+
+# Variables d'environnement
+[System.Environment]::GetEnvironmentVariables() | Out-String | Out-File "$dir\\variables_environnement.txt" -Encoding UTF8
+
+# Plans d'alimentation
+powercfg /list 2>\\$null | Out-File "$dir\\plans_alimentation.txt" -Encoding UTF8
+
+# Services gaming
+\\$report = "KERMOUK - Services gaming\\n$(Get-Date)\\n\\n"
+foreach (\\$svc in @("SysMain","DiagTrack","XblGameSave","WerSvc","WSearch","XboxGipSvc","GameInput")) {
+  try {
+    \\$s = Get-Service \\$svc -EA Stop
+    \\$report += "\\$(\\$svc.PadRight(25)) \\$(\\$s.Status.ToString().PadRight(10)) \\$(\\$s.StartType)\\n"
+  } catch { \\$report += "\\$(\\$svc.PadRight(25)) Introuvable\\n" }
+}
+\\$report | Out-File "$dir\\services_gaming.txt" -Encoding UTF8
+
+# Tweaks registre
+function Get-Reg(\\$p, \\$n) { try { return (Get-ItemProperty "Registry::$\\$p" -Name \\$n -EA Stop).\\$n } catch { return 'N/A' } }
+\\$reg = "KERMOUK - Etat tweaks registre\\n$(Get-Date)\\n\\n"
+\\$reg += "Win32PrioritySeparation : \\$(Get-Reg 'HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl' 'Win32PrioritySeparation')\\n"
+\\$reg += "HAGS (HwSchMode)        : \\$(Get-Reg 'HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers' 'HwSchMode')\\n"
+\\$reg += "SystemResponsiveness    : \\$(Get-Reg 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile' 'SystemResponsiveness')\\n"
+\\$reg += "NetworkThrottlingIndex  : \\$(Get-Reg 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile' 'NetworkThrottlingIndex')\\n"
+\\$reg += "GameDVR_Enabled         : \\$(Get-Reg 'HKEY_CURRENT_USER\\System\\GameConfigStore' 'GameDVR_Enabled')\\n"
+\\$reg | Out-File "$dir\\tweaks_registre.txt" -Encoding UTF8
+
+Write-Host "EXPORT_DONE"
+`;
+    await runPs1(script, false, 30000);
+    return { ok: true, folder: exportDir };
+  } catch (e: unknown) {
+    return { ok: false, folder: "", error: String(e) };
+  }
+});
+
+// ─── IPC: Pre-Launch Fortnite ─────────────────────────────────────────────────
+ipcMain.handle("pre-launch-fortnite", async (_e, params: { killDiscord: boolean; autoRestore: boolean }) => {
+  const win = BrowserWindow.getAllWindows()[0];
+  const sendProgress = (step: string, message: string, done = false) => {
+    try {
+      if (win && !win.isDestroyed()) win.webContents.send("pre-launch-progress", { step, message, done });
+    } catch { /* ignore */ }
+  };
+
+  const killedProcesses: string[] = [];
+
+  try {
+    // Step 1: mesure RAM avant
+    sendProgress("ram_before", "Mesure RAM...");
+    const { stdout: ramBefore } = await execAsync("wmic OS get FreePhysicalMemory /value", { timeout: 3000 });
+    const freeBefore = parseInt(ramBefore.match(/FreePhysicalMemory=(\d+)/)?.[1] ?? "0");
+
+    // Step 2: vider la RAM (EmptyWorkingSet via PS1)
+    sendProgress("empty_ram", "Vidage RAM en cours...");
+    const emptyScript = `
+$code = @'
+using System;using System.Runtime.InteropServices;
+public class WS{[DllImport("psapi.dll")]public static extern bool EmptyWorkingSet(IntPtr h);}
+'@
+Add-Type -TypeDefinition $code -ErrorAction SilentlyContinue
+Get-Process | ForEach-Object { try { [WS]::EmptyWorkingSet($_.Handle) } catch {} }
+Write-Host "DONE"
+`;
+    await runPs1(emptyScript, false, 10000);
+
+    const { stdout: ramAfterOut } = await execAsync("wmic OS get FreePhysicalMemory /value", { timeout: 3000 });
+    const freeAfter = parseInt(ramAfterOut.match(/FreePhysicalMemory=(\d+)/)?.[1] ?? "0");
+    const freedMb = Math.max(0, Math.round((freeAfter - freeBefore) / 1024));
+    sendProgress("ram_freed", `RAM liberee : +${freedMb} MB`);
+
+    // Step 3: kill processus parasites
+    sendProgress("kill", "Arret processus parasites...");
+    const toKill = ["OneDrive.exe", "SearchIndexer.exe", "RuntimeBroker.exe", "SearchHost.exe", "StartMenuExperienceHost.exe"];
+    if (params.killDiscord) toKill.push("Discord.exe");
+
+    for (const proc of toKill) {
+      try {
+        await execAsync(`taskkill /F /IM "${proc}" /T`, { timeout: 3000 });
+        killedProcesses.push(proc);
+      } catch { /* process peut ne pas exister */ }
+    }
+
+    // Stopper Defender NIS
+    try {
+      await execAsync("sc stop WdNisSvc", { timeout: 3000 });
+      killedProcesses.push("WdNisSvc");
+    } catch { /* peut echouer si déjà arrêté */ }
+
+    sendProgress("killed", `${killedProcesses.length} processus arretes`);
+
+    // Step 4: Flush DNS
+    sendProgress("dns", "Flush DNS...");
+    await execAsync("ipconfig /flushdns", { timeout: 5000 });
+
+    // Step 5: Lancer Fortnite
+    sendProgress("launch", "Lancement Fortnite...");
+    shell.openExternal("com.epicgames.launcher://apps/Fortnite?action=launch");
+
+    // Step 6: apres 35s, set affinite + priorité HIGH
+    setTimeout(async () => {
+      try {
+        const affScript = `
+$proc = Get-Process "FortniteClient-Win64-Shipping" -ErrorAction SilentlyContinue
+if ($proc) {
+  $proc.ProcessorAffinity = 63
+  $proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High
+  Write-Host "OK"
+}
+`;
+        await runPs1(affScript, false, 5000);
+        sendProgress("affinity", "Affinite CPU (cores 0-5) et priorite HIGH appliquees");
+      } catch { /* Fortnite peut ne pas etre encore lance */ }
+    }, 35000);
+
+    // Step 7: si autoRestore, surveiller la fermeture de Fortnite
+    if (params.autoRestore) {
+      const restoreInterval = setInterval(async () => {
+        try {
+          const { stdout: tasks } = await execAsync('tasklist /FI "IMAGENAME eq FortniteClient-Win64-Shipping.exe" /FO CSV /NH', { timeout: 3000 });
+          if (!tasks.includes("FortniteClient")) {
+            clearInterval(restoreInterval);
+            sendProgress("restore", "Fortnite ferme - Restauration processus...");
+
+            // Redemarrer WdNisSvc
+            execAsync("sc start WdNisSvc", { timeout: 5000 }).catch(() => {});
+
+            // Redemarrer OneDrive si tué
+            if (killedProcesses.includes("OneDrive.exe")) {
+              const onedrivePath = join(process.env.LOCALAPPDATA || "", "Microsoft", "OneDrive", "OneDrive.exe");
+              if (fs.existsSync(onedrivePath)) {
+                execAsync(`"${onedrivePath}"`, { timeout: 3000 }).catch(() => {});
+              }
+            }
+
+            sendProgress("restored", "Processus restaures", true);
+          }
+        } catch { /* ignore */ }
+      }, 30000);
+    } else {
+      sendProgress("done", "Pre-launch termine", true);
+    }
+
+    return { ok: true, freedMb };
+  } catch (e: unknown) {
+    sendProgress("error", String(e), true);
+    return { ok: false, error: String(e) };
+  }
+});
 
 // ─── IPC: GPU Reset (NVIDIA) ─────────────────────────────────────────────────
 ipcMain.handle("reset-gpu-overclock", async () => {

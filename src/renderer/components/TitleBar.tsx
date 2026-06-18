@@ -11,7 +11,7 @@ export default function TitleBar() {
         <span style={{ fontFamily: "Orbitron, sans-serif", fontSize: "10px", fontWeight: 900, letterSpacing: "0.12em", color: "#fff" }}>
           KERMOUK <span style={{ color: "#FF6B00" }}>OPTIMIZER</span>
         </span>
-        <span style={{ fontSize: "9px", color: "#444", marginLeft: "4px" }}>v2.2.0</span>
+        <span style={{ fontSize: "9px", color: "#444", marginLeft: "4px" }}>v{__APP_VERSION__}</span>
       </div>
 
       {/* Window controls */}

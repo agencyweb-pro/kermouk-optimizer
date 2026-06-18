@@ -6,7 +6,7 @@ interface StatusBarProps {
 export default function StatusBar({ isPremium, appliedTweaksCount }: StatusBarProps) {
   return (
     <div className="status-bar">
-      <span>KERMOUK OPTIMIZER v2.2.0</span>
+      <span>KERMOUK OPTIMIZER v{__APP_VERSION__}</span>
 
       <span style={{ display: "flex", alignItems: "center" }}>
         <span

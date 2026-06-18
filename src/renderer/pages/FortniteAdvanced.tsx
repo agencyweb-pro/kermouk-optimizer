@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { FREE_TWEAKS, PREMIUM_TWEAKS, generateBatScript } from "../utils/tweakEngine";
 
 interface Props {
@@ -14,6 +14,12 @@ const ALL_TWEAKS = [...FREE_TWEAKS, ...PREMIUM_TWEAKS];
 export default function FortniteAdvanced({ isPremium, openLicenseModal }: Props) {
   const [iniStatus, setIniStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [iniError, setIniError] = useState("");
+
+  useEffect(() => {
+    window.kermouk?.getTweakStates?.().then(states => {
+      if (states?.["fortnite-ini"]) setIniStatus("ok");
+    }).catch(() => {});
+  }, []);
 
   const [cacheStatus, setCacheStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [cacheResult, setCacheResult] = useState("");
@@ -34,6 +40,7 @@ export default function FortniteAdvanced({ isPremium, openLicenseModal }: Props)
       setIniStatus("ok");
       const prev = parseInt(localStorage.getItem("kermouk_tweaks_count") || "0");
       localStorage.setItem("kermouk_tweaks_count", String(prev + 1));
+      window.kermouk?.setTweakState?.("fortnite-ini", true);
     } else {
       setIniStatus("error");
       setIniError(result.error || "Erreur inconnue");
@@ -66,8 +73,8 @@ export default function FortniteAdvanced({ isPremium, openLicenseModal }: Props)
         category: "premium",
         commands: [],
         powershellCommands: [
-          'Get-Process -Name "EpicGamesLauncher" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = "High" }',
-          'Get-Process -Name "FortniteClient-Win64-Shipping" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = "High" }',
+          'Get-Process -Name "EpicGamesLauncher" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High }',
+          'Get-Process -Name "FortniteClient-Win64-Shipping" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High }',
         ],
       },
     ]);

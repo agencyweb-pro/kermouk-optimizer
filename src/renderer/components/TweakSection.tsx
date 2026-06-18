@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Tweak } from "../utils/tweakEngine";
 import { generateBatScript } from "../utils/tweakEngine";
+import { setTweakState, setBulkTweakStates, getTweakState } from "../utils/tweakStore";
 
 interface TweakSectionProps {
   title: string;
@@ -11,18 +12,29 @@ interface TweakSectionProps {
 }
 
 export default function TweakSection({ title, subtitle, tweaks, isPremium, openLicenseModal }: TweakSectionProps) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(tweaks.filter((t) => getTweakState(t.id)).map((t) => t.id))
+  );
   const [applying, setApplying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<{ text: string; type: string }[]>([]);
   const [creatingRP, setCreatingRP] = useState(false);
   const [done, setDone] = useState(false);
+  const [tweakStatuses, setTweakStatuses] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    window.kermouk?.getTweakStates?.().then(states => {
+      if (states) setTweakStatuses(states);
+    }).catch(() => {});
+  }, []);
 
   const toggleTweak = (id: string, locked: boolean) => {
     if (locked) { openLicenseModal(); return; }
     setSelected((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      const isAdding = !next.has(id);
+      isAdding ? next.add(id) : next.delete(id);
+      setTweakState(id, isAdding);
       return next;
     });
   };
@@ -30,9 +42,13 @@ export default function TweakSection({ title, subtitle, tweaks, isPremium, openL
   const selectAll = () => {
     const available = tweaks.filter((t) => t.category === "free" || isPremium).map((t) => t.id);
     setSelected(new Set(available));
+    setBulkTweakStates(available, true);
   };
 
-  const clearAll = () => setSelected(new Set());
+  const clearAll = () => {
+    setSelected(new Set());
+    setBulkTweakStates(tweaks.map((t) => t.id), false);
+  };
 
   const addLog = (text: string, type = "ok") => {
     setLogs((prev) => [...prev, { text, type }]);
@@ -76,6 +92,12 @@ export default function TweakSection({ title, subtitle, tweaks, isPremium, openL
       addLog("⚡ Redémarrez Windows pour finaliser les changements.", "warn");
       const prev = parseInt(localStorage.getItem("kermouk_tweaks_count") || "0");
       localStorage.setItem("kermouk_tweaks_count", String(prev + toApply.length));
+      const newStatuses = { ...tweakStatuses };
+      for (const t of toApply) {
+        newStatuses[t.id] = true;
+        window.kermouk?.setTweakState?.(t.id, true);
+      }
+      setTweakStatuses(newStatuses);
     } else {
       addLog(`✗ Erreur: ${result.message}`, "error");
       if (result.error) addLog(`  Détails: ${result.error}`, "error");
@@ -132,7 +154,7 @@ export default function TweakSection({ title, subtitle, tweaks, isPremium, openL
             >
               <div className="tweak-row">
                 <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px", flexWrap: "wrap" }}>
                     <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", color: locked ? "#444" : "#e0e0e0" }}>
                       {tweak.name}
                     </span>
@@ -144,6 +166,16 @@ export default function TweakSection({ title, subtitle, tweaks, isPremium, openL
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: "inline" }}>
                           <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0110 0v4" />
                         </svg>{" "}VERROUILLÉ
+                      </span>
+                    )}
+                    {tweakStatuses[tweak.id] === true && (
+                      <span style={{ fontSize: "9px", color: "#22c55e", background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: "3px", padding: "1px 5px", fontFamily: "Rajdhani, sans-serif", fontWeight: 700 }}>
+                        ✓ Actif
+                      </span>
+                    )}
+                    {tweakStatuses[tweak.id] === false && (
+                      <span style={{ fontSize: "9px", color: "#ef4444", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: "3px", padding: "1px 5px", fontFamily: "Rajdhani, sans-serif", fontWeight: 700 }}>
+                        ✗ Inactif
                       </span>
                     )}
                   </div>

@@ -122,8 +122,6 @@ export default function GpoTweaks({ isPremium, openLicenseModal }: Props) {
   const [tweaks, setTweaks] = useState<GpoTweak[]>(
     TWEAKS_DEF.map(t => ({ ...t, status: "unknown" }))
   );
-  const [gpeditAvailable, setGpeditAvailable] = useState<boolean | null>(null);
-  const [installingGpedit, setInstallingGpedit] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [applying, setApplying] = useState<string | null>(null);
   const [vbsActive, setVbsActive] = useState<boolean | null>(null);
@@ -132,28 +130,37 @@ export default function GpoTweaks({ isPremium, openLicenseModal }: Props) {
 
   useEffect(() => {
     if (!isPremium) return;
+    loadStoredStates();
     scanStatus();
   }, [isPremium]);
 
+  const loadStoredStates = async () => {
+    const saved = await window.kermouk?.getTweakStates?.().catch(() => ({})) || {};
+    if (Object.keys(saved).length === 0) return;
+    setTweaks(prev => prev.map(t => {
+      if (!(t.id in saved)) return t;
+      return { ...t, status: (saved[t.id] ? "active" : "inactive") as TweakStatus };
+    }));
+  };
+
   const scanStatus = async () => {
     setScanning(true);
-    const result = await window.kermouk?.scanGpoStatus?.().catch(() => null);
-    if (result) {
-      setGpeditAvailable(result.gpeditAvailable ?? false);
-      setVbsActive(result.vbsActive ?? null);
+    const [scanResult, realStatus] = await Promise.all([
+      window.kermouk?.scanGpoStatus?.().catch(() => null),
+      window.kermouk?.checkTweakStatus?.().catch(() => ({})),
+    ]);
+    if (scanResult) {
+      setVbsActive(scanResult.vbsActive ?? null);
+      const merged = { ...(scanResult.tweaks || {}) };
+      for (const [id, active] of Object.entries(realStatus || {})) {
+        merged[id] = active ? "active" : merged[id] ?? "inactive";
+      }
       setTweaks(prev => prev.map(t => ({
         ...t,
-        status: (result.tweaks?.[t.id] as TweakStatus) ?? "unknown",
+        status: (merged[t.id] as TweakStatus) ?? "unknown",
       })));
     }
     setScanning(false);
-  };
-
-  const installGpedit = async () => {
-    setInstallingGpedit(true);
-    await window.kermouk?.installGpedit?.().catch(() => null);
-    await scanStatus();
-    setInstallingGpedit(false);
   };
 
   const applySelected = async (safeOnly = false) => {
@@ -183,6 +190,7 @@ export default function GpoTweaks({ isPremium, openLicenseModal }: Props) {
     await window.kermouk?.createRestorePoint().catch(() => null);
     const result = await window.kermouk?.restoreGpoDefaults?.().catch(() => null);
     if (result?.ok) {
+      await window.kermouk?.resetTweakStates?.().catch(() => null);
       setResultMsg("✓ Paramètres GPO restaurés aux valeurs Windows par défaut.");
       await scanStatus();
     } else {
@@ -236,45 +244,30 @@ export default function GpoTweaks({ isPremium, openLicenseModal }: Props) {
           GPO & <span className="gradient-text">POLITIQUE SYSTÈME</span>
         </h1>
         <p style={{ fontSize: "12px", color: "#555", marginTop: "4px" }}>
-          Tweaks Group Policy avancés — {scanning ? "scan en cours..." : `${activeCount}/${tweaks.length} tweaks actifs`}
+          Tweaks registre système — {scanning ? "scan en cours..." : `${activeCount}/${tweaks.length} tweaks actifs`}
         </p>
       </div>
 
-      {/* gpedit status */}
-      <div className="card" style={{ marginBottom: "12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+      {/* Compatibilité Windows Home banner */}
+      <div className="card" style={{ marginBottom: "12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", background: "rgba(34,197,94,0.04)", border: "1px solid rgba(34,197,94,0.2)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <div style={{
-            width: "8px", height: "8px", borderRadius: "50%", flexShrink: 0,
-            background: gpeditAvailable ? "#22c55e" : gpeditAvailable === false ? "#ef4444" : "#444",
-          }} />
+          <div style={{ width: "8px", height: "8px", borderRadius: "50%", flexShrink: 0, background: "#22c55e" }} />
           <div>
-            <div style={{ fontSize: "12px", color: "#ccc", fontWeight: 600 }}>
-              {gpeditAvailable ? "gpedit.msc disponible ✓" : gpeditAvailable === false ? "gpedit.msc absent (Windows Home)" : "Vérification..."}
+            <div style={{ fontSize: "12px", color: "#22c55e", fontWeight: 600 }}>
+              Compatible Windows 10/11 Home et Pro — Sans gpedit.msc
             </div>
             <div style={{ fontSize: "10px", color: "#444", marginTop: "2px" }}>
-              {gpeditAvailable === false ? "Cliquez pour installer automatiquement via DISM" : "Les tweaks GPO sont appliqués directement via le registre"}
+              Tous les tweaks s'appliquent directement via le registre Windows — aucun outil tiers requis.
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
-          {gpeditAvailable === false && (
-            <button
-              onClick={installGpedit}
-              disabled={installingGpedit}
-              className="btn-primary"
-              style={{ padding: "5px 14px", fontSize: "11px" }}
-            >
-              {installingGpedit ? "Installation..." : "Installer gpedit"}
-            </button>
-          )}
-          <button
-            onClick={scanStatus}
-            disabled={scanning}
-            style={{ padding: "5px 12px", background: "none", border: "1px solid #1e1e1e", borderRadius: "6px", color: "#555", fontSize: "11px", cursor: "pointer" }}
-          >
-            {scanning ? "Scan..." : "Rescanner"}
-          </button>
-        </div>
+        <button
+          onClick={scanStatus}
+          disabled={scanning}
+          style={{ padding: "5px 12px", background: "none", border: "1px solid #1e1e1e", borderRadius: "6px", color: "#555", fontSize: "11px", cursor: "pointer", flexShrink: 0 }}
+        >
+          {scanning ? "Scan..." : "Rescanner"}
+        </button>
       </div>
 
       {/* VBS warning if active */}

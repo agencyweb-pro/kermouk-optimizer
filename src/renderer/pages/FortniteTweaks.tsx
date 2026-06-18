@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { generateBatScript } from "../utils/tweakEngine";
 import type { Tweak } from "../utils/tweakEngine";
 
@@ -11,8 +11,8 @@ const FORTNITE_TWEAKS: Tweak[] = [
     category: "premium",
     commands: [],
     powershellCommands: [
-      'Get-Process -Name "EpicGamesLauncher" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = "High" }',
-      'Get-Process -Name "FortniteClient-Win64-Shipping" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = "High" }',
+      'Get-Process -Name "EpicGamesLauncher" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High }',
+      'Get-Process -Name "FortniteClient-Win64-Shipping" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High }',
     ],
   },
   {
@@ -72,6 +72,13 @@ export default function FortniteTweaks({ isPremium, openLicenseModal }: Props) {
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<{ text: string; type: string }[]>([]);
   const [done, setDone] = useState(false);
+  const [tweakStatuses, setTweakStatuses] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    window.kermouk?.getTweakStates?.().then(states => {
+      if (states) setTweakStatuses(states);
+    }).catch(() => {});
+  }, []);
 
   const toggleTweak = (id: string) => {
     if (!isPremium) { openLicenseModal(); return; }
@@ -111,6 +118,12 @@ export default function FortniteTweaks({ isPremium, openLicenseModal }: Props) {
       addLog(`✓ ${result.message}`, "ok");
       result.applied?.forEach((name) => addLog(`  → ${name}`, "ok"));
       addLog("⚡ Lancez Fortnite pour constater les améliorations !", "warn");
+      const newStatuses = { ...tweakStatuses };
+      for (const t of toApply) {
+        newStatuses[t.id] = true;
+        window.kermouk?.setTweakState?.(t.id, true);
+      }
+      setTweakStatuses(newStatuses);
     } else {
       addLog(`✗ ${result.message}`, "error");
     }
@@ -158,12 +171,22 @@ export default function FortniteTweaks({ isPremium, openLicenseModal }: Props) {
             >
               <div className="tweak-row">
                 <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px", flexWrap: "wrap" }}>
                     <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", color: locked ? "#444" : "#e0e0e0" }}>
                       {tweak.name}
                     </span>
                     <span className="badge badge-premium">FORTNITE</span>
                     {locked && <span className="badge badge-locked">VERROUILLÉ</span>}
+                    {tweakStatuses[tweak.id] === true && (
+                      <span style={{ fontSize: "9px", color: "#22c55e", background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: "3px", padding: "1px 5px", fontFamily: "Rajdhani, sans-serif", fontWeight: 700 }}>
+                        ✓ Actif
+                      </span>
+                    )}
+                    {tweakStatuses[tweak.id] === false && (
+                      <span style={{ fontSize: "9px", color: "#ef4444", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: "3px", padding: "1px 5px", fontFamily: "Rajdhani, sans-serif", fontWeight: 700 }}>
+                        ✗ Inactif
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: "11px", color: "#444", lineHeight: 1.5 }}>{tweak.description}</div>
                 </div>

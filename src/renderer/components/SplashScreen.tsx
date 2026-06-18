@@ -30,7 +30,7 @@ export default function SplashScreen({ fading }: SplashScreenProps) {
           marginTop: "4px",
           fontWeight: 700,
         }}>
-          OPTIMIZER v2.2.0
+          OPTIMIZER v{__APP_VERSION__}
         </div>
       </div>
 

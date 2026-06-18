@@ -169,7 +169,7 @@ export const PREMIUM_TWEAKS: Tweak[] = [
     category: "premium",
     commands: [],
     registryCommands: [
-      'reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\QoS\\Fortnite" /v Application /t REG_SZ /d "FortniteClient-Win64-Shipping.exe" /f',
+      'reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\QoS\\Fortnite" /v "Application Name" /t REG_SZ /d "FortniteClient-Win64-Shipping.exe" /f',
       'reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\QoS\\Fortnite" /v "DSCP Value" /t REG_SZ /d "46" /f',
     ],
   },
@@ -184,12 +184,13 @@ export const PREMIUM_TWEAKS: Tweak[] = [
   // ── GPU ─────────────────────────────────────────────────────────────────────
   {
     id: "gpu-tdr",
-    name: "TDR Delay GPU Optimisé",
-    description: "Augmente TdrDelay et TdrDdiDelay pour éviter les freezes GPU en jeu.",
+    name: "TDR Delay GPU Optimise",
+    description: "Configure TdrDelay=10, TdrDdiDelay=10 et TdrLevel=3 pour eviter les freezes GPU.",
     category: "premium",
     registryCommands: [
-      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers" /v TdrDelay /t REG_DWORD /d 60 /f',
-      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers" /v TdrDdiDelay /t REG_DWORD /d 60 /f',
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers" /v TdrDelay /t REG_DWORD /d 10 /f',
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers" /v TdrDdiDelay /t REG_DWORD /d 10 /f',
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers" /v TdrLevel /t REG_DWORD /d 3 /f',
     ],
     commands: [],
   },
@@ -264,8 +265,8 @@ export const PREMIUM_TWEAKS: Tweak[] = [
   // ── SERVICES ─────────────────────────────────────────────────────────────────
   {
     id: "disable-superfetch",
-    name: "Désactivation SysMain (Superfetch)",
-    description: "Désactive Superfetch qui monopolise la RAM et le disque inutilement en jeu.",
+    name: "Desactivation SysMain (deconseille 32GB)",
+    description: "ATTENTION : sur 32 GB RAM, SysMain est benefique. A desactiver uniquement si RAM < 8 GB.",
     category: "premium",
     serviceCommands: ["sc stop SysMain", "sc config SysMain start=disabled"],
     commands: [],
@@ -319,37 +320,190 @@ export const PREMIUM_TWEAKS: Tweak[] = [
   {
     id: "memory-usage",
     name: "Optimisation Mémoire fsutil",
-    description: "Configure memoryusage=2 et désactive 8dot3 et lastaccess pour de meilleures performances.",
+    description: "Configure memoryusage=1 (optimal 32GB) et désactive 8dot3 et lastaccess.",
     category: "premium",
     commands: [
-      "fsutil behavior set memoryusage 2",
+      "fsutil behavior set memoryusage 1",
       "fsutil behavior set disable8dot3 1",
       "fsutil behavior set disablelastaccess 1",
     ],
   },
   {
     id: "disable-memory-compression",
-    name: "Désactivation Memory Compression",
-    description: "Désactive la compression mémoire Windows pour libérer des ressources CPU.",
+    name: "Desactivation Memory Compression",
+    description: "Desactive la compression memoire Windows pour liberer des ressources CPU.",
     category: "premium",
     powershellCommands: ["Disable-MMAgent -mc"],
     commands: [],
+  },
+  // ── NOUVEAUX TWEAKS PREMIUM ──────────────────────────────────────────────────
+  {
+    id: "disable-mpo",
+    name: "Desactivation MPO (Multi-Plane Overlay)",
+    description: "Elimine les micro-freezes et stutters sur GPU NVIDIA laptops. Impact majeur sur GTX 1650 Ti.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows\\Dwm" /v "OverlayTestMode" /t REG_DWORD /d 5 /f',
+    ],
+  },
+  {
+    id: "bcdedit-dynamictick",
+    name: "Desactivation Dynamic Tick (BCDEdit)",
+    description: "Reduit les interruptions CPU inutiles pour une latence d'input plus stable.",
+    category: "premium",
+    commands: [
+      "bcdedit /set disabledynamictick yes",
+      "bcdedit /set useplatformclock false",
+      "bcdedit /set tscsyncpolicy enhanced",
+    ],
+  },
+  {
+    id: "wifi-sleep-disable",
+    name: "Desactivation Veille Adaptateur WiFi",
+    description: "Empeche l'adaptateur WiFi de se mettre en veille, elimine les pics de ping.",
+    category: "premium",
+    commands: [
+      'powershell -Command "Get-NetAdapter | Where-Object {$_.PhysicalMediaType -like \'*802.11*\'} | ForEach-Object { try { Set-NetAdapterPowerManagement -Name $_.Name -AllowComputerToTurnOffDevice Disabled } catch {} }"',
+    ],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E972-E325-11CE-BFC1-08002bE10318}\\0001" /v "PnPCapabilities" /t REG_DWORD /d 24 /f',
+    ],
+  },
+  {
+    id: "disable-power-throttling",
+    name: "Desactivation PowerThrottling",
+    description: "Desactive le throttling CPU de Windows pour les apps gaming. Crucial sur laptop.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power\\PowerThrottling" /v "PowerThrottlingOff" /t REG_DWORD /d 1 /f',
+    ],
+  },
+  {
+    id: "mft-zone",
+    name: "Optimisation Zone MFT (NTFS)",
+    description: "Agrandit la zone MFT pour eviter la fragmentation sur les gros fichiers Fortnite.",
+    category: "premium",
+    commands: ["fsutil behavior set mftzone 2"],
+  },
+  // ── TWEAKS D:\OPTI KERMOUK ───────────────────────────────────────────────────
+  {
+    id: "win32-priority-separation",
+    name: "Win32PrioritySeparation Gaming (42)",
+    description: "Configure Win32PrioritySeparation=42 pour maximiser la tranche CPU allouee aux programmes en avant-plan.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 42 /f',
+    ],
+  },
+  {
+    id: "mmcss-latency-sensitive",
+    name: "MMCSS NoLazyMode + LatencySensitive",
+    description: "Active NoLazyMode et AlwaysOn sur le profil MMCSS et marque toutes les taches comme Latency Sensitive pour reduire les micro-stutters.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile" /v NoLazyMode /t REG_DWORD /d 1 /f',
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile" /v AlwaysOn /t REG_DWORD /d 1 /f',
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games" /v "Latency Sensitive" /t REG_SZ /d True /f',
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Low Latency" /v "Latency Sensitive" /t REG_SZ /d True /f',
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Audio" /v "Latency Sensitive" /t REG_SZ /d True /f',
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\DisplayPostProcessing" /v "Latency Sensitive" /t REG_SZ /d True /f',
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Window Manager" /v "Latency Sensitive" /t REG_SZ /d True /f',
+    ],
+  },
+  {
+    id: "keyboard-mouse-queue",
+    name: "Taille Buffer Clavier & Souris",
+    description: "Augmente la file d'attente clavier (kbdclass) et souris (mouclass) a 32 entrees pour eviter les drops d'inputs.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\kbdclass\\Parameters" /v KeyboardDataQueueSize /t REG_DWORD /d 32 /f',
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\mouclass\\Parameters" /v MouseDataQueueSize /t REG_DWORD /d 32 /f',
+    ],
+  },
+  {
+    id: "core-parking-disable",
+    name: "Desactivation Core Parking",
+    description: "Empeche Windows d'eteindre des coeurs CPU en jeu (Wake Up Cores). Reduit les pics de latence sur i5-10300H.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power\\PowerSettings\\54533251-82be-4824-96c1-47b60b740d00\\943c8cb6-6f93-4227-ad87-e9a3feec08d1" /v Attributes /t REG_DWORD /d 2 /f',
+    ],
+  },
+  {
+    id: "usb-power-save-disable",
+    name: "Desactivation Veille USB",
+    description: "Empeche Windows de mettre en veille les peripheriques USB (souris, clavier, casque) pour eliminer les micro-freezes.",
+    category: "premium",
+    commands: [],
+    powershellCommands: [
+      'Get-PnpDevice | Where-Object { $_.InstanceId -like "*USB\\ROOT*" } | ForEach-Object { try { $obj = Get-CimInstance -ClassName MSPower_DeviceEnable -Namespace root\\wmi | Where-Object { $_.InstanceName -like "*$($_.InstanceId)*" }; if ($obj) { Set-CimInstance -InputObject $obj -Property @{Enable=$false} } } catch {} }',
+      'Get-NetAdapter -Physical | Get-NetAdapterPowerManagement | ForEach-Object { $_.AllowComputerToTurnOffDevice = "Disabled"; $_ | Set-NetAdapterPowerManagement }',
+    ],
+  },
+  {
+    id: "winsock-reset",
+    name: "Reset Winsock & DNS Flush",
+    description: "Reinitialise la pile reseau Windows et vide le cache DNS pour des connexions plus propres.",
+    category: "premium",
+    commands: [
+      "netsh winsock reset",
+      "netsh int ip reset",
+      "ipconfig /flushdns",
+    ],
+  },
+  {
+    id: "delivery-optimization-disable",
+    name: "Desactivation Delivery Optimization",
+    description: "Desactive le partage de mises a jour Windows entre PCs (DownloadMode=0) pour liberer de la bande passante en jeu.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\DeliveryOptimization\\Config" /v DownloadMode /t REG_DWORD /d 0 /f',
+    ],
+  },
+  {
+    id: "energy-estimation-disable",
+    name: "Desactivation EnergyEstimation",
+    description: "Desactive le calcul d'estimation energetique Windows inutile sur un PC gaming branche.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power" /v EnergyEstimationEnabled /t REG_DWORD /d 0 /f',
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power" /v Latency /t REG_DWORD /d 0 /f',
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power" /v LowLatency /t REG_DWORD /d 1 /f',
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power" /v HighestPerformance /t REG_DWORD /d 1 /f',
+    ],
+  },
+  {
+    id: "svhost-split-32gb",
+    name: "SvcHostSplitThreshold 32 GB",
+    description: "Configure SvcHostSplitThresholdInKB=3200000 pour 32 GB de RAM afin de reduire le nombre de processus svchost et liberer de la memoire.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control" /v SvcHostSplitThresholdInKB /t REG_DWORD /d 3200000 /f',
+    ],
   },
 ];
 
 export function generateBatScript(tweaks: Tweak[]): string {
   const lines: string[] = [
     "@echo off",
-    "chcp 65001 > nul",
     "echo ============================================",
-    "echo   KERMOUK OPTIMIZER v2.2.0 - Application Tweaks",
+    "echo   KERMOUK OPTIMIZER v2.5.0 - Application Tweaks",
     "echo ============================================",
     "echo.",
     "",
   ];
 
   for (const tweak of tweaks) {
-    lines.push(`echo [*] Application: ${tweak.name}`);
+    lines.push(`echo [*] Tweak: ${tweak.id}`);
 
     if (tweak.commands?.length) {
       for (const cmd of tweak.commands) {

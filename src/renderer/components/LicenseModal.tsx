@@ -5,25 +5,55 @@ interface LicenseModalProps {
   onSuccess: (key: string) => void;
 }
 
+const KEY_REGEX = /^KERM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+
+function formatKeyInput(raw: string): string {
+  // Garde uniquement alphanumériques, uppercase, max 16 chars utiles (sans tirets)
+  const clean = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  // Réassemble avec tirets : KERM-XXXX-XXXX-XXXX
+  const parts = [
+    clean.slice(0, 4),
+    clean.slice(4, 8),
+    clean.slice(8, 12),
+    clean.slice(12, 16),
+  ].filter(Boolean);
+  return parts.join("-");
+}
+
 export default function LicenseModal({ onClose, onSuccess }: LicenseModalProps) {
   const [key, setKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setError("");
+    setInfo("");
+    setKey(formatKeyInput(e.target.value));
+  };
 
   const handleSubmit = async () => {
-    const trimmedKey = key.trim();
-    if (!trimmedKey) {
+    const trimmed = key.trim();
+    if (!trimmed) {
       setError("Veuillez saisir votre clé de licence.");
+      return;
+    }
+    if (!KEY_REGEX.test(trimmed)) {
+      setError("Format invalide. Attendu : KERM-XXXX-XXXX-XXXX");
       return;
     }
     setLoading(true);
     setError("");
-    const result = await window.kermouk.saveLicense(trimmedKey);
+    setInfo("");
+
+    const result = await window.kermouk.activateLicense(trimmed);
     setLoading(false);
+
     if (result.ok) {
-      onSuccess(trimmedKey);
+      if (result.alreadyOwned) setInfo("Clé déjà liée à ton compte — Premium réactivé.");
+      setTimeout(() => onSuccess(trimmed), result.alreadyOwned ? 1200 : 0);
     } else {
-      setError(result.message || "Clé invalide. Vérifiez votre clé de licence.");
+      setError(result.message || "Activation échouée. Vérifie ta clé.");
     }
   };
 
@@ -31,6 +61,8 @@ export default function LicenseModal({ onClose, onSuccess }: LicenseModalProps) 
     if (e.key === "Enter") handleSubmit();
     if (e.key === "Escape") onClose();
   };
+
+  const isValid = KEY_REGEX.test(key);
 
   return (
     <div
@@ -62,7 +94,7 @@ export default function LicenseModal({ onClose, onSuccess }: LicenseModalProps) 
               ACTIVER PREMIUM
             </div>
             <div style={{ fontSize: "12px", color: "#555", marginTop: "4px" }}>
-              Entrez votre clé de licence UUID
+              Entrez votre clé de licence KERM-XXXX-XXXX-XXXX
             </div>
           </div>
           <button onClick={onClose} className="titlebar-btn">
@@ -81,25 +113,29 @@ export default function LicenseModal({ onClose, onSuccess }: LicenseModalProps) 
           <input
             type="text"
             value={key}
-            onChange={(e) => { setKey(e.target.value); setError(""); }}
+            onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder="xxxxxxxx-xxxx-4xxx-xxxx-xxxxxxxxxxxx"
+            placeholder="KERM-XXXX-XXXX-XXXX"
+            maxLength={19}
             autoFocus
             style={{
               width: "100%",
               background: "#0a0a0a",
-              border: `1px solid ${error ? "#ef4444" : "rgba(255,107,0,0.3)"}`,
+              border: `1px solid ${error ? "#ef4444" : isValid ? "#22c55e" : "rgba(255,107,0,0.3)"}`,
               borderRadius: "8px",
               padding: "12px 14px",
               color: "#fff",
-              fontSize: "13px",
+              fontSize: "15px",
               fontFamily: "monospace",
               outline: "none",
-              letterSpacing: "0.03em",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
               WebkitUserSelect: "text",
               userSelect: "text",
+              transition: "border-color 0.15s",
             }}
           />
+
           {error && (
             <div style={{ marginTop: "8px", fontSize: "11px", color: "#ef4444", display: "flex", alignItems: "center", gap: "4px" }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="#ef4444">
@@ -108,13 +144,26 @@ export default function LicenseModal({ onClose, onSuccess }: LicenseModalProps) 
               {error}
             </div>
           )}
+
+          {info && (
+            <div style={{ marginTop: "8px", fontSize: "11px", color: "#22c55e", display: "flex", alignItems: "center", gap: "4px" }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="#22c55e">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14l-4-4 1.41-1.41L10 13.17l6.59-6.59L18 8l-8 8z" />
+              </svg>
+              {info}
+            </div>
+          )}
         </div>
 
-        {/* Info */}
+        {/* Info box */}
         <div style={{ background: "rgba(255,107,0,0.05)", border: "1px solid rgba(255,107,0,0.15)", borderRadius: "8px", padding: "12px", marginBottom: "20px", fontSize: "11px", color: "#666", lineHeight: 1.6 }}>
-          La clé de licence est l&apos;UUID reçu après votre achat sur{" "}
+          La clé de licence est fournie après votre achat sur{" "}
           <span style={{ color: "#FF6B00" }}>kermouk-optimizer.com</span>.
-          Elle a le format <code style={{ background: "#1a1a1a", padding: "1px 4px", borderRadius: "3px", color: "#ccc" }}>xxxxxxxx-xxxx-4xxx-...</code>
+          Format : <code style={{ background: "#1a1a1a", padding: "1px 6px", borderRadius: "3px", color: "#ccc", letterSpacing: "0.08em" }}>KERM-XXXX-XXXX-XXXX</code>
+          <br />
+          <span style={{ color: "#444", marginTop: "4px", display: "block" }}>
+            Un compte connecté est requis pour l&apos;activation.
+          </span>
         </div>
 
         {/* Buttons */}
@@ -122,13 +171,18 @@ export default function LicenseModal({ onClose, onSuccess }: LicenseModalProps) 
           <button onClick={onClose} className="btn-secondary" style={{ flex: 1 }}>
             Annuler
           </button>
-          <button onClick={handleSubmit} disabled={loading} className="btn-primary" style={{ flex: 2 }}>
+          <button
+            onClick={handleSubmit}
+            disabled={loading || (!isValid && key.length > 0)}
+            className="btn-primary"
+            style={{ flex: 2 }}
+          >
             {loading ? (
               <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
                 <svg className="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
                 </svg>
-                Vérification...
+                Activation...
               </span>
             ) : (
               "Activer la licence"

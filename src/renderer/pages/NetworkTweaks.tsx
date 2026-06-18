@@ -2,6 +2,9 @@ import TweakSection from "../components/TweakSection";
 import { PREMIUM_TWEAKS } from "../utils/tweakEngine";
 
 const NETWORK_TWEAKS = [
+  PREMIUM_TWEAKS.find((t) => t.id === "wifi-sleep-disable")!,
+  PREMIUM_TWEAKS.find((t) => t.id === "winsock-reset")!,
+  PREMIUM_TWEAKS.find((t) => t.id === "delivery-optimization-disable")!,
   PREMIUM_TWEAKS.find((t) => t.id === "tcp-autotune")!,
   PREMIUM_TWEAKS.find((t) => t.id === "tcp-rss")!,
   PREMIUM_TWEAKS.find((t) => t.id === "tcp-chimney")!,

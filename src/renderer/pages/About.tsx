@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import type { Theme } from "../App";
+import { resetAllTweaks, getActiveTweaksCount } from "../utils/tweakStore";
 
 interface AboutProps {
   isPremium: boolean;
@@ -27,6 +28,11 @@ interface DriverInfo {
 export default function About({ isPremium, licenseKey, onLicenseRemoved, openLicenseModal, theme, onThemeChange }: AboutProps) {
   const [driverInfo, setDriverInfo] = useState<DriverInfo | null>(null);
   const [notifEnabled, setNotifEnabled] = useState(() => localStorage.getItem("kermouk_notif") !== "0");
+  const [activeTweaksCount, setActiveTweaksCount] = useState(() => getActiveTweaksCount());
+  const [resetDone, setResetDone] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportFolder, setExportFolder] = useState<string | null>(null);
+  const [exportError, setExportError] = useState("");
 
   useEffect(() => {
     window.kermouk?.getDriverInfo?.().then(d => setDriverInfo(d as DriverInfo)).catch(() => {});
@@ -37,6 +43,28 @@ export default function About({ isPremium, licenseKey, onLicenseRemoved, openLic
     setNotifEnabled(val);
     localStorage.setItem("kermouk_notif", val ? "1" : "0");
     await window.kermouk?.setNotificationsEnabled?.(val);
+  };
+
+  const handleExport = async () => {
+    setExportLoading(true);
+    setExportFolder(null);
+    setExportError("");
+    const result = await window.kermouk.exportPcOptimizations();
+    setExportLoading(false);
+    if (result.ok) {
+      setExportFolder(result.folder);
+    } else {
+      setExportError(result.error || "Erreur lors de l'export.");
+    }
+  };
+
+  const handleResetTweaks = () => {
+    const confirmed = window.confirm(`Réinitialiser tous les tweaks ?\n\nCela remettra les ${activeTweaksCount} toggle(s) actif(s) à OFF dans l'interface. Les modifications Windows déjà appliquées restent effectives jusqu'au prochain redémarrage ou restauration.`);
+    if (!confirmed) return;
+    resetAllTweaks();
+    setActiveTweaksCount(0);
+    setResetDone(true);
+    setTimeout(() => setResetDone(false), 3000);
   };
 
   const handleRemoveLicense = async () => {
@@ -222,6 +250,81 @@ export default function About({ isPremium, licenseKey, onLicenseRemoved, openLic
           <div onClick={toggleNotif} style={{ width: "40px", height: "22px", borderRadius: "11px", background: notifEnabled ? "var(--primary)" : "#1e1e1e", border: "1px solid " + (notifEnabled ? "var(--primary)" : "#333"), cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
             <div style={{ width: "16px", height: "16px", borderRadius: "50%", background: "white", position: "absolute", top: "2px", left: notifEnabled ? "20px" : "2px", transition: "left 0.2s" }} />
           </div>
+        </div>
+      </div>
+
+      {/* Export / Backup */}
+      <div className="card" style={{ marginBottom: "12px" }}>
+        <div style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px", textTransform: "uppercase", letterSpacing: "0.08em", color: "#666", marginBottom: "14px" }}>
+          Export & Backup PC
+        </div>
+        <div style={{ fontSize: "11px", color: "#555", lineHeight: 1.6, marginBottom: "12px" }}>
+          Exporte sur le Bureau : liste des logiciels (CSV), variables d'environnement, plans d'alimentation, état des services gaming et tweaks registre actuels.
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          <button
+            onClick={handleExport}
+            disabled={exportLoading}
+            className="btn-primary"
+            style={{ padding: "8px 18px", fontSize: "11px" }}
+          >
+            {exportLoading ? "Export en cours..." : "Exporter configuration PC"}
+          </button>
+          {exportFolder && (
+            <button
+              onClick={() => window.kermouk.openExternal(exportFolder)}
+              style={{ padding: "7px 14px", fontSize: "11px", borderRadius: "6px", background: "transparent", border: "1px solid rgba(34,197,94,0.3)", color: "#22c55e", cursor: "pointer", fontFamily: "Rajdhani, sans-serif", fontWeight: 700 }}
+            >
+              Ouvrir le dossier export
+            </button>
+          )}
+        </div>
+        {exportFolder && (
+          <div style={{ fontSize: "10px", color: "#22c55e", marginTop: "8px" }}>
+            ✓ Export créé : {exportFolder.split("\\").pop()}
+          </div>
+        )}
+        {exportError && (
+          <div style={{ fontSize: "10px", color: "#ef4444", marginTop: "8px" }}>✗ {exportError}</div>
+        )}
+      </div>
+
+      {/* Reset tweaks */}
+      <div className="card" style={{ marginBottom: "12px" }}>
+        <div style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px", textTransform: "uppercase", letterSpacing: "0.08em", color: "#666", marginBottom: "14px" }}>
+          Réinitialisation
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
+          <div>
+            <div style={{ fontSize: "12px", color: "#ccc", marginBottom: "2px" }}>Réinitialiser tous les tweaks</div>
+            <div style={{ fontSize: "10px", color: "#444" }}>
+              {activeTweaksCount > 0
+                ? `${activeTweaksCount} tweak(s) actif(s) — remet tous les toggles à OFF`
+                : "Aucun tweak actif en ce moment"}
+            </div>
+            {resetDone && (
+              <div style={{ fontSize: "10px", color: "#22c55e", marginTop: "4px" }}>✓ Tous les toggles ont été réinitialisés.</div>
+            )}
+          </div>
+          <button
+            onClick={handleResetTweaks}
+            disabled={activeTweaksCount === 0}
+            style={{
+              padding: "8px 14px",
+              borderRadius: "6px",
+              border: "1px solid rgba(239,68,68,0.3)",
+              background: activeTweaksCount > 0 ? "rgba(239,68,68,0.07)" : "transparent",
+              color: activeTweaksCount > 0 ? "#ef4444" : "#333",
+              fontSize: "11px",
+              fontFamily: "Rajdhani, sans-serif",
+              fontWeight: 700,
+              cursor: activeTweaksCount > 0 ? "pointer" : "default",
+              whiteSpace: "nowrap",
+              transition: "all 0.2s",
+            }}
+          >
+            Réinitialiser tous les tweaks
+          </button>
         </div>
       </div>
 
