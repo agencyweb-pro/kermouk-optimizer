@@ -89,7 +89,7 @@ declare global {
       applyPackComplet: () => Promise<{ ok: boolean; error?: string }>;
       generateSystemReport: () => Promise<{ ok: boolean; reportPath: string; content: string; error?: string }>;
       exportPcOptimizations: () => Promise<{ ok: boolean; folder: string; error?: string }>;
-      preLaunchFortnite: (params: { killDiscord: boolean; autoRestore: boolean }) => Promise<{ ok: boolean; freedMb?: number; error?: string }>;
+      preLaunchFortnite: (params: { killDiscord: boolean; autoRestore: boolean; extraApps?: string[] }) => Promise<{ ok: boolean; freedMb?: number; error?: string }>;
       onPreLaunchProgress: (cb: (data: { step: string; message: string; done: boolean }) => void) => () => void;
       onHwAlert: (cb: (data: Record<string, unknown>) => void) => () => void;
       checkForUpdates: () => Promise<void>;
@@ -100,6 +100,12 @@ declare global {
       authLogout: () => Promise<{ ok: boolean }>;
       authGetUser: () => Promise<{ user: { id: string; email: string } | null; profile: SupabaseProfile | null }>;
       authCheckSession: () => Promise<{ ok: boolean; user?: { id: string; email: string } | null; profile?: SupabaseProfile | null }>;
+      backups: {
+        create: (name: string, type: "manual" | "automatic") => Promise<{ ok: boolean; id?: string; error?: string }>;
+        list: () => Promise<{ ok: boolean; backups: Array<{ id: string; name: string; date: string; type: "manual" | "automatic" }>; error?: string }>;
+        restore: (id: string) => Promise<{ success: boolean; errors: string[] }>;
+        delete: (id: string) => Promise<{ ok: boolean; error?: string }>;
+      };
     };
   }
 }

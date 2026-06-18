@@ -8,12 +8,15 @@ import * as os from "os";
 import * as crypto from "crypto";
 import Store from "electron-store";
 import { createClient } from "@supabase/supabase-js";
+import { createBackup, listBackups, restoreBackup, deleteBackup, hasAutoBackupToday } from "./backup";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const WS = require("ws");
 // Node.js 18 n'a pas de WebSocket natif dans le contexte Electron main
 if (!globalThis.WebSocket) (globalThis as Record<string, unknown>).WebSocket = WS;
 
 const execAsync = promisify(exec);
+
+let autoBackupTriggeredThisSession = false;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const store = new Store<Record<string, any>>();
@@ -404,6 +407,12 @@ ipcMain.handle("create-restore-point", async () => {
 
 // ─── IPC: Apply tweaks ──────────────────────────────────────────────────────
 ipcMain.handle("apply-tweaks", async (_e, batContent: string, tweakNames: string[]) => {
+  // Auto-backup: first tweak of the session if no automatic backup exists today
+  if (!autoBackupTriggeredThisSession && !hasAutoBackupToday()) {
+    autoBackupTriggeredThisSession = true;
+    createBackup("Sauvegarde auto", "automatic").catch(() => {});
+  }
+
   const batPath = join(SCRIPTS_DIR, `kermouk_tweaks_${Date.now()}.bat`);
 
   try {
@@ -425,6 +434,42 @@ ipcMain.handle("apply-tweaks", async (_e, batContent: string, tweakNames: string
       error: String(e),
       message: "Erreur lors de l'application. Vérifiez que vous avez accepté l'élévation UAC.",
     };
+  }
+});
+
+// ─── IPC: Backup system ──────────────────────────────────────────────────────
+ipcMain.handle("backup-create", async (_e, name: string, type: "manual" | "automatic") => {
+  try {
+    const id = await createBackup(name, type);
+    return { ok: true, id };
+  } catch (e: unknown) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+ipcMain.handle("backup-list", async () => {
+  try {
+    return { ok: true, backups: listBackups() };
+  } catch (e: unknown) {
+    return { ok: false, backups: [], error: String(e) };
+  }
+});
+
+ipcMain.handle("backup-restore", async (_e, id: string) => {
+  try {
+    const result = await restoreBackup(id);
+    return result;
+  } catch (e: unknown) {
+    return { success: false, errors: [String(e)] };
+  }
+});
+
+ipcMain.handle("backup-delete", (_e, id: string) => {
+  try {
+    deleteBackup(id);
+    return { ok: true };
+  } catch (e: unknown) {
+    return { ok: false, error: String(e) };
   }
 });
 
@@ -1549,7 +1594,7 @@ Write-Host "EXPORT_DONE"
 });
 
 // ─── IPC: Pre-Launch Fortnite ─────────────────────────────────────────────────
-ipcMain.handle("pre-launch-fortnite", async (_e, params: { killDiscord: boolean; autoRestore: boolean }) => {
+ipcMain.handle("pre-launch-fortnite", async (_e, params: { killDiscord: boolean; autoRestore: boolean; extraApps?: string[] }) => {
   const win = BrowserWindow.getAllWindows()[0];
   const sendProgress = (step: string, message: string, done = false) => {
     try {
@@ -1587,6 +1632,7 @@ Write-Host "DONE"
     sendProgress("kill", "Arret processus parasites...");
     const toKill = ["OneDrive.exe", "SearchIndexer.exe", "RuntimeBroker.exe", "SearchHost.exe", "StartMenuExperienceHost.exe"];
     if (params.killDiscord) toKill.push("Discord.exe");
+    if (params.extraApps?.length) toKill.push(...params.extraApps);
 
     for (const proc of toKill) {
       try {

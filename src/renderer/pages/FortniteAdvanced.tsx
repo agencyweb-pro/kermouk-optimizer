@@ -25,6 +25,9 @@ export default function FortniteAdvanced({ isPremium, openLicenseModal }: Props)
   const [cacheResult, setCacheResult] = useState("");
 
   const [priorityStatus, setPriorityStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [eacStatus, setEacStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [eacMsg, setEacMsg] = useState("");
+  const [fseStatus, setFseStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [modeStatus, setModeStatus] = useState<"idle" | "applying">("idle");
   const [modeLogs, setModeLogs] = useState<LogEntry[]>([]);
 
@@ -156,6 +159,50 @@ export default function FortniteAdvanced({ isPremium, openLicenseModal }: Props)
       </svg>
     );
     return null;
+  };
+
+  const handleCheckEac = async () => {
+    if (!isPremium) { openLicenseModal(); return; }
+    setEacStatus("loading");
+    setEacMsg("");
+    // Force EasyAntiCheat_EOS en démarrage automatique et le démarre si arrêté
+    const bat = [
+      "@echo off",
+      "sc config EasyAntiCheat_EOS start=auto",
+      "sc start EasyAntiCheat_EOS",
+    ].join("\r\n");
+    const result = await window.kermouk.applyTweaks(bat, ["EAC Service Auto-Start"]);
+    if (result.ok) {
+      setEacStatus("ok");
+      setEacMsg("Service EasyAntiCheat_EOS configuré en démarrage automatique.");
+    } else {
+      setEacStatus("error");
+      setEacMsg("Echec — EAC peut-être absent ou Fortnite non installé.");
+    }
+  };
+
+  const handleFseOptimization = async () => {
+    if (!isPremium) { openLicenseModal(); return; }
+    setFseStatus("loading");
+    // Désactive Fullscreen Optimizations pour l'exe Fortnite via AppCompatFlags\Layers
+    // Cherche le chemin Fortnite automatiquement, puis enregistre la couche de compatibilité
+    const bat = [
+      "@echo off",
+      'powershell -Command "',
+      '  $fn = Get-ChildItem -Path \\"C:\\Program Files\\Epic Games\\" -Recurse -Filter \\"FortniteClient-Win64-Shipping.exe\\" -EA SilentlyContinue | Select-Object -First 1;',
+      '  if ($fn) {',
+      '    $k = \\"HKCU\\\\Software\\\\Microsoft\\\\Windows NT\\\\CurrentVersion\\\\AppCompatFlags\\\\Layers\\";',
+      '    reg add $k /v $fn.FullName /t REG_SZ /d \\"~ DISABLEDXMAXIMIZEDWINDOWEDMODE\\" /f;',
+      '    Write-Host DONE',
+      '  } else { Write-Host NOTFOUND }',
+      '"',
+    ].join("\r\n");
+    const result = await window.kermouk.applyTweaks(bat, ["FSE Fullscreen Optimizations Off"]);
+    setFseStatus(result.ok ? "ok" : "error");
+    if (result.ok) {
+      const prev = parseInt(localStorage.getItem("kermouk_tweaks_count") || "0");
+      localStorage.setItem("kermouk_tweaks_count", String(prev + 1));
+    }
   };
 
   const allFreeIds = ALL_TWEAKS.filter(t => t.category === "free").length;
@@ -321,6 +368,69 @@ export default function FortniteAdvanced({ isPremium, openLicenseModal }: Props)
           >
             <StatusIcon status={priorityStatus} />
             {priorityStatus === "loading" ? "Application..." : "Appliquer"}
+          </button>
+        </div>
+      </div>
+
+      {/* EasyAntiCheat service check */}
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+              <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", color: "#e0e0e0" }}>
+                EasyAntiCheat Service Auto-Start
+              </span>
+              <span className="badge badge-premium">PREMIUM</span>
+            </div>
+            <div style={{ fontSize: "11px", color: "#555", lineHeight: 1.6, marginBottom: eacMsg ? "6px" : 0 }}>
+              Force le service EasyAntiCheat_EOS en démarrage automatique. Corrige les erreurs de lancement
+              EAC sans avoir à réinstaller Fortnite.
+              <strong style={{ color: "#888" }}> Ne désactive jamais EAC.</strong>
+            </div>
+            {eacMsg && (
+              <div style={{ fontSize: "11px", color: eacStatus === "ok" ? "#22c55e" : "#ef4444", marginTop: "4px" }}>
+                {eacStatus === "ok" ? "✓ " : "✗ "}{eacMsg}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={handleCheckEac}
+            disabled={eacStatus === "loading"}
+            className="btn-primary"
+            style={{ padding: "10px 16px", fontSize: "12px", flexShrink: 0, display: "flex", alignItems: "center", gap: "6px" }}
+          >
+            <StatusIcon status={eacStatus} />
+            {eacStatus === "loading" ? "Vérification..." : eacStatus === "ok" ? "Réappliquer" : "Vérifier EAC"}
+          </button>
+        </div>
+      </div>
+
+      {/* FSE Fullscreen Optimizations per-exe */}
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+              <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", color: "#e0e0e0" }}>
+                Désactiver Fullscreen Optimizations (Fortnite)
+              </span>
+              <span className="badge badge-premium">PREMIUM</span>
+            </div>
+            <div style={{ fontSize: "11px", color: "#555", lineHeight: 1.6 }}>
+              Enregistre le flag <code style={{ color: "#888", fontSize: "10px" }}>DISABLEDXMAXIMIZEDWINDOWEDMODE</code> pour
+              l&apos;exe Fortnite dans AppCompatFlags — équivalent de la case &ldquo;Désactiver les optimisations plein écran&rdquo;
+              dans les Propriétés du raccourci. Détecte automatiquement le chemin Fortnite.
+            </div>
+            {fseStatus === "ok" && <div style={{ fontSize: "11px", color: "#22c55e", marginTop: "6px" }}>✓ Fullscreen Optimizations désactivées pour Fortnite !</div>}
+            {fseStatus === "error" && <div style={{ fontSize: "11px", color: "#ef4444", marginTop: "6px" }}>✗ Fortnite non trouvé dans C:\Program Files\Epic Games\</div>}
+          </div>
+          <button
+            onClick={handleFseOptimization}
+            disabled={fseStatus === "loading"}
+            className="btn-primary"
+            style={{ padding: "10px 16px", fontSize: "12px", flexShrink: 0, display: "flex", alignItems: "center", gap: "6px" }}
+          >
+            <StatusIcon status={fseStatus} />
+            {fseStatus === "loading" ? "Application..." : fseStatus === "ok" ? "Réappliquer" : "Appliquer"}
           </button>
         </div>
       </div>

@@ -75,7 +75,7 @@ contextBridge.exposeInMainWorld("kermouk", {
   exportPcOptimizations: () => ipcRenderer.invoke("export-pc-optimizations"),
 
   // Pre-Launch Fortnite
-  preLaunchFortnite: (params: { killDiscord: boolean; autoRestore: boolean }) =>
+  preLaunchFortnite: (params: { killDiscord: boolean; autoRestore: boolean; extraApps?: string[] }) =>
     ipcRenderer.invoke("pre-launch-fortnite", params),
   onPreLaunchProgress: (cb: (data: { step: string; message: string; done: boolean }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: { step: string; message: string; done: boolean }) => cb(data);
@@ -107,4 +107,13 @@ contextBridge.exposeInMainWorld("kermouk", {
   authLogout: () => ipcRenderer.invoke("auth-logout"),
   authGetUser: () => ipcRenderer.invoke("auth-get-user"),
   authCheckSession: () => ipcRenderer.invoke("auth-check-session"),
+
+  // Backup system
+  backups: {
+    create: (name: string, type: "manual" | "automatic") =>
+      ipcRenderer.invoke("backup-create", name, type),
+    list: () => ipcRenderer.invoke("backup-list"),
+    restore: (id: string) => ipcRenderer.invoke("backup-restore", id),
+    delete: (id: string) => ipcRenderer.invoke("backup-delete", id),
+  },
 });
