@@ -65,7 +65,7 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
   const [updateVersion, setUpdateVersion] = useState<string>("");
   const [updatePercent, setUpdatePercent] = useState<number>(0);
   const [updateError, setUpdateError] = useState<string>("");
-  const currentVersion = "2.5.0";
+  const currentVersion = __APP_VERSION__;
 
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hwIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -102,9 +102,15 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
       if (payload.message) setUpdateError(payload.message as string);
     });
 
+    // Déclenche une vérification auto 12s après le montage (laisser l'app s'initialiser)
+    const updateTimer = setTimeout(() => {
+      window.kermouk?.checkForUpdates?.().catch(() => {});
+    }, 12000);
+
     return () => {
       if (hwIntervalRef.current) clearInterval(hwIntervalRef.current);
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+      clearTimeout(updateTimer);
       removeUpdateListener?.();
     };
   }, []);
@@ -170,7 +176,7 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
     setModeApplying(null);
   };
 
-  const DOWNLOAD_URL = "https://kermouk.com/download";
+  const DOWNLOAD_URL = "https://github.com/tranoliviermatteopro-bot/kermouk-optimizer/releases/latest";
 
   const handleCheckUpdate = async () => {
     if (updateStatus === "no-server") {
@@ -702,13 +708,13 @@ function UpdateCard({ status, version, percent, currentVersion, onCheck, onInsta
     : isAvailable || isDownloading || isDownloaded ? "rgba(245,158,11,0.2)"
     : "#1a1a1a";
 
-  const badgeLabel = isUpToDate ? `✓ Derniere version — v${currentVersion}`
-    : isAvailable ? `Mise a jour disponible — v${version}`
+  const badgeLabel = isUpToDate ? `✓ A jour — v${currentVersion}`
+    : isAvailable ? `Mise a jour v${version} disponible`
     : isDownloading ? `Telechargement... ${percent}%`
     : isDownloaded ? `Prete a installer — v${version}`
-    : isNoServer ? `v${currentVersion} — verif. desactivee`
+    : isNoServer ? `Impossible de verifier (GitHub injoignable)`
     : isChecking ? "Verification en cours..."
-    : `v${currentVersion}`;
+    : `v${currentVersion} — cliquez pour verifier`;
 
   const btnLabel = isChecking ? "Verification..."
     : isNoServer ? "Telecharger"
