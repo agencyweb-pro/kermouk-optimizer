@@ -177,8 +177,9 @@ export async function restoreBackup(id: string): Promise<{ success: boolean; err
   const errors: string[] = [];
 
   // Build PowerShell script for elevated restore
+  // Paths use single backslashes — PowerShell quoted strings don't need escaping
   const regImportLines = manifest.regFiles.map(f => {
-    const p = join(backupDir, f).replace(/\\/g, "\\\\");
+    const p = join(backupDir, f);
     return `try { & reg.exe import "${p}" 2>$null } catch { Write-Host "FAIL reg $('${f}')" }`;
   }).join("\n");
 
