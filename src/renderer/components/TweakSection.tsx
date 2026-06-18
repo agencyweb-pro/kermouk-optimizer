@@ -180,6 +180,11 @@ export default function TweakSection({ title, subtitle, tweaks, isPremium, openL
                     )}
                   </div>
                   <div style={{ fontSize: "11px", color: "#444", lineHeight: 1.5 }}>{tweak.description}</div>
+                  {tweak.warning && (
+                    <div style={{ marginTop: "6px", fontSize: "10px", color: "#f59e0b", background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: "4px", padding: "5px 8px", lineHeight: 1.5 }}>
+                      ⚠ {tweak.warning}
+                    </div>
+                  )}
                 </div>
 
                 <label className="toggle" style={{ cursor: locked ? "pointer" : undefined }}>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import TweakSection from "../components/TweakSection";
 import GpuTweaks from "./GpuTweaks";
 import { FREE_TWEAKS, PREMIUM_TWEAKS } from "../utils/tweakEngine";
@@ -8,7 +8,7 @@ interface Props {
   openLicenseModal: () => void;
 }
 
-type Tab = "gpu" | "cpu" | "ram" | "peripherals" | "storage";
+type Tab = "gpu" | "cpu" | "ram" | "peripherals" | "storage" | "security";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "gpu", label: "GPU" },
@@ -16,37 +16,92 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "ram", label: "RAM" },
   { id: "peripherals", label: "Peripherals" },
   { id: "storage", label: "Storage" },
+  { id: "security", label: "Securite" },
 ];
 
-// ── CPU: priorité, scheduling, core parking ───────────────────────────────────
+// ── CPU ───────────────────────────────────────────────────────────────────────
 const CPU_TWEAKS = [
   PREMIUM_TWEAKS.find(t => t.id === "cpu-priority")!,
   PREMIUM_TWEAKS.find(t => t.id === "win32-priority-separation")!,
   PREMIUM_TWEAKS.find(t => t.id === "bcdedit-dynamictick")!,
   PREMIUM_TWEAKS.find(t => t.id === "core-parking-disable")!,
+  PREMIUM_TWEAKS.find(t => t.id === "disable-coalescable-timer")!,
+  PREMIUM_TWEAKS.find(t => t.id === "disable-power-throttling")!,
+  PREMIUM_TWEAKS.find(t => t.id === "cpu-max-performance")!,
+  PREMIUM_TWEAKS.find(t => t.id === "disable-cstates")!,
+  PREMIUM_TWEAKS.find(t => t.id === "disable-modern-standby")!,
 ].filter(Boolean);
 
-// ── RAM: mémoire et pagination ────────────────────────────────────────────────
+// ── Sécurité ──────────────────────────────────────────────────────────────────
+const SECURITY_TWEAKS = [
+  PREMIUM_TWEAKS.find(t => t.id === "core-isolation-off")!,
+].filter(Boolean);
+
+// ── RAM ───────────────────────────────────────────────────────────────────────
 const RAM_TWEAKS = [
   PREMIUM_TWEAKS.find(t => t.id === "memory-usage")!,
   PREMIUM_TWEAKS.find(t => t.id === "svhost-split-32gb")!,
   PREMIUM_TWEAKS.find(t => t.id === "disable-memory-compression")!,
+  PREMIUM_TWEAKS.find(t => t.id === "clear-pagefile-shutdown")!,
+  PREMIUM_TWEAKS.find(t => t.id === "disable-prefetcher")!,
+  PREMIUM_TWEAKS.find(t => t.id === "disable-ram-diagnostics")!,
+  PREMIUM_TWEAKS.find(t => t.id === "restore-sysmain")!,
+  PREMIUM_TWEAKS.find(t => t.id === "disable-page-combining")!,
 ].filter(Boolean);
 
-// ── Peripherals: clavier, souris, USB ─────────────────────────────────────────
+// ── Peripherals ───────────────────────────────────────────────────────────────
 const PERIPHERALS_TWEAKS = [
   PREMIUM_TWEAKS.find(t => t.id === "keyboard-mouse-queue")!,
   PREMIUM_TWEAKS.find(t => t.id === "usb-power-save-disable")!,
+  PREMIUM_TWEAKS.find(t => t.id === "usb-selective-suspend-off")!,
+  PREMIUM_TWEAKS.find(t => t.id === "disable-mouse-acceleration")!,
+  PREMIUM_TWEAKS.find(t => t.id === "enable-pixel-mouse")!,
+  PREMIUM_TWEAKS.find(t => t.id === "disable-sticky-keys")!,
+  PREMIUM_TWEAKS.find(t => t.id === "disable-toggle-keys")!,
+  PREMIUM_TWEAKS.find(t => t.id === "keyboard-repeat-delay")!,
 ].filter(Boolean);
 
-// ── Storage: SSD/NVMe et NTFS ─────────────────────────────────────────────────
-const STORAGE_TWEAKS = [
+// ── Storage (base, toujours affichés) ─────────────────────────────────────────
+const STORAGE_BASE_TWEAKS = [
   FREE_TWEAKS.find(t => t.id === "ssd-nvme-optimization")!,
   PREMIUM_TWEAKS.find(t => t.id === "mft-zone")!,
 ].filter(Boolean);
 
+const STORAGE_SSD_TWEAKS = [
+  PREMIUM_TWEAKS.find(t => t.id === "disable-ssd-powersave")!,
+  PREMIUM_TWEAKS.find(t => t.id === "optimise-ssd-sleep")!,
+].filter(Boolean);
+
+const STORAGE_HDD_TWEAKS = [
+  PREMIUM_TWEAKS.find(t => t.id === "disable-dipm-hipm")!,
+].filter(Boolean);
+
 export default function HardwarePage({ isPremium, openLicenseModal }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("gpu");
+  const [diskTypes, setDiskTypes] = useState<{ hasSSD: boolean; hasHDD: boolean } | null>(null);
+  const [diskDetecting, setDiskDetecting] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === "storage" && diskTypes === null && !diskDetecting) {
+      setDiskDetecting(true);
+      (window.kermouk as unknown as { detectDiskTypes: () => Promise<{ hasSSD: boolean; hasHDD: boolean }> })
+        .detectDiskTypes()
+        .then(result => {
+          setDiskTypes(result);
+          setDiskDetecting(false);
+        })
+        .catch(() => {
+          setDiskTypes({ hasSSD: false, hasHDD: false });
+          setDiskDetecting(false);
+        });
+    }
+  }, [activeTab, diskTypes, diskDetecting]);
+
+  const storageTweaks = [
+    ...STORAGE_BASE_TWEAKS,
+    ...(diskTypes?.hasSSD ? STORAGE_SSD_TWEAKS : []),
+    ...(diskTypes?.hasHDD ? STORAGE_HDD_TWEAKS : []),
+  ];
 
   return (
     <div>
@@ -93,7 +148,7 @@ export default function HardwarePage({ isPremium, openLicenseModal }: Props) {
       {activeTab === "cpu" && (
         <TweakSection
           title="CPU"
-          subtitle="Priorité processus, Win32PrioritySeparation, BCDEdit et Core Parking"
+          subtitle="Priorité processus, Win32PrioritySeparation, BCDEdit, Core Parking, C-States et plans d'alimentation"
           tweaks={CPU_TWEAKS}
           isPremium={isPremium}
           openLicenseModal={openLicenseModal}
@@ -103,7 +158,7 @@ export default function HardwarePage({ isPremium, openLicenseModal }: Props) {
       {activeTab === "ram" && (
         <TweakSection
           title="RAM"
-          subtitle="Optimisation mémoire fsutil, SvcHostSplit et compression mémoire"
+          subtitle="Optimisation mémoire, SvcHost, compression, pagefile, prefetcher et diagnostics"
           tweaks={RAM_TWEAKS}
           isPremium={isPremium}
           openLicenseModal={openLicenseModal}
@@ -113,7 +168,7 @@ export default function HardwarePage({ isPremium, openLicenseModal }: Props) {
       {activeTab === "peripherals" && (
         <TweakSection
           title="PÉRIPHÉRIQUES"
-          subtitle="Buffers clavier/souris et désactivation veille USB"
+          subtitle="Buffers clavier/souris, veille USB, accélération souris et raccourcis d'accessibilité"
           tweaks={PERIPHERALS_TWEAKS}
           isPremium={isPremium}
           openLicenseModal={openLicenseModal}
@@ -121,10 +176,46 @@ export default function HardwarePage({ isPremium, openLicenseModal }: Props) {
       )}
 
       {activeTab === "storage" && (
+        <div>
+          {diskDetecting && (
+            <div style={{ padding: "10px 14px", marginBottom: "12px", background: "#0d0d0d", border: "1px solid #1a1a1a", borderRadius: "6px", fontSize: "11px", color: "#555" }}>
+              Détection des disques (SSD/HDD)...
+            </div>
+          )}
+          {diskTypes !== null && (
+            <div style={{ display: "flex", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
+              {diskTypes.hasSSD && (
+                <span style={{ fontSize: "10px", color: "#22c55e", background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: "4px", padding: "3px 10px" }}>
+                  ✓ SSD/NVMe détecté — tweaks SSD activés
+                </span>
+              )}
+              {diskTypes.hasHDD && (
+                <span style={{ fontSize: "10px", color: "#22c55e", background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: "4px", padding: "3px 10px" }}>
+                  ✓ HDD détecté — tweaks HDD activés
+                </span>
+              )}
+              {!diskTypes.hasSSD && !diskTypes.hasHDD && (
+                <span style={{ fontSize: "10px", color: "#f59e0b", background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: "4px", padding: "3px 10px" }}>
+                  ⚠ Type de disque non détecté — tweaks conditionnels masqués
+                </span>
+              )}
+            </div>
+          )}
+          <TweakSection
+            title="STOCKAGE"
+            subtitle="SSD/NVMe, zone MFT NTFS, économie d'énergie et HIPM/DIPM — réduction des temps d'accès"
+            tweaks={storageTweaks}
+            isPremium={isPremium}
+            openLicenseModal={openLicenseModal}
+          />
+        </div>
+      )}
+
+      {activeTab === "security" && (
         <TweakSection
-          title="STOCKAGE"
-          subtitle="SSD/NVMe et zone MFT NTFS — réduction des temps d'accès"
-          tweaks={STORAGE_TWEAKS}
+          title="SÉCURITÉ"
+          subtitle="Options avancées — lisez attentivement les avertissements avant d'activer"
+          tweaks={SECURITY_TWEAKS}
           isPremium={isPremium}
           openLicenseModal={openLicenseModal}
         />

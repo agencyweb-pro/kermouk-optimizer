@@ -21,13 +21,12 @@ const PROFILES: GameProfile[] = [
     id: "fortnite",
     name: "Fortnite",
     icon: "⚡",
-    description: "Tweaks Epic Games Launcher, GameUserSettings.ini optimisé, priorité HIGH",
+    description: "Tweaks Epic Games Launcher, GameUserSettings.ini optimisé, MMCSS GPU Priority",
     paths: ["%LOCALAPPDATA%\\FortniteGame", "C:\\Program Files\\Epic Games\\Fortnite"],
     tweaks: `@echo off
 reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games" /v "GPU Priority" /t REG_DWORD /d 8 /f >nul
 reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games" /v "Priority" /t REG_DWORD /d 6 /f >nul
 reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games" /v "Scheduling Category" /t REG_SZ /d "High" /f >nul
-wmic process where name="FortniteClient-Win64-Shipping.exe" CALL setpriority "High Priority" >nul 2>&1
 echo OK`,
   },
   {
@@ -51,7 +50,6 @@ echo OK`,
     tweaks: `@echo off
 reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters" /v "TcpAckFrequency" /t REG_DWORD /d 1 /f >nul
 reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters" /v "TCPNoDelay" /t REG_DWORD /d 1 /f >nul
-wmic process where name="r5apex.exe" CALL setpriority "High Priority" >nul 2>&1
 echo OK`,
     launchOptions: "+fps_max 0 -novid -high -preload",
   },
@@ -63,7 +61,6 @@ echo OK`,
     paths: ["C:\\Riot Games\\VALORANT", "C:\\Program Files\\Riot Games"],
     tweaks: `@echo off
 reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games" /v "GPU Priority" /t REG_DWORD /d 8 /f >nul
-wmic process where name="VALORANT-Win64-Shipping.exe" CALL setpriority "High Priority" >nul 2>&1
 echo OK`,
   },
   {
@@ -75,7 +72,6 @@ echo OK`,
     tweaks: `@echo off
 reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters" /v "TcpAckFrequency" /t REG_DWORD /d 1 /f >nul
 reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters" /v "TCPNoDelay" /t REG_DWORD /d 1 /f >nul
-wmic process where name="cs2.exe" CALL setpriority "High Priority" >nul 2>&1
 echo OK`,
     launchOptions: "-novid -high -nojoy +fps_max 0 -tickrate 128",
   },

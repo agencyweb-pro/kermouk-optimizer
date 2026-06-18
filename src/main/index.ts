@@ -1050,7 +1050,7 @@ ipcMain.handle("apply-streaming-mode", async () => {
   const batContent = `@echo off
 :: Priorité processus streaming
 wmic process where name="obs64.exe" CALL setpriority "Above Normal" >nul 2>&1
-wmic process where name="FortniteClient-Win64-Shipping.exe" CALL setpriority "High Priority" >nul 2>&1
+:: Fortnite en Normal (pas High) pour ne pas affamer les pilotes souris/clavier
 
 :: Désactiver notifications Windows
 reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications" /v "ToastEnabled" /t REG_DWORD /d 0 /f >nul
@@ -1317,8 +1317,8 @@ del /f /q "%SystemRoot%\\Prefetch\\*.pf" >nul 2>&1
 
 echo [3/10] Priorite CPU Fortnite...
 reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 38 /f >nul
-reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\FortniteClient-Win64-Shipping.exe\\PerfOptions" /v CpuPriorityClass /t REG_DWORD /d 3 /f >nul
-reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\FortniteClient-Win64-Shipping.exe\\PerfOptions" /v IoPriority /t REG_DWORD /d 3 /f >nul
+reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\FortniteClient-Win64-Shipping.exe\\PerfOptions" /v CpuPriorityClass /t REG_DWORD /d 2 /f >nul
+reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\FortniteClient-Win64-Shipping.exe\\PerfOptions" /v IoPriority /t REG_DWORD /d 2 /f >nul
 reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\EpicGamesLauncher.exe\\PerfOptions" /v CpuPriorityClass /t REG_DWORD /d 2 /f >nul
 
 echo [4/10] Effets visuels...
@@ -1657,19 +1657,18 @@ Write-Host "DONE"
     sendProgress("launch", "Lancement Fortnite...");
     shell.openExternal("com.epicgames.launcher://apps/Fortnite?action=launch");
 
-    // Step 6: apres 35s, set affinite + priorité HIGH
+    // Step 6: apres 35s, set affinite CPU (pas de changement de priorite — evite d'affamer souris/clavier)
     setTimeout(async () => {
       try {
         const affScript = `
 $proc = Get-Process "FortniteClient-Win64-Shipping" -ErrorAction SilentlyContinue
 if ($proc) {
   $proc.ProcessorAffinity = 63
-  $proc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High
   Write-Host "OK"
 }
 `;
         await runPs1(affScript, false, 5000);
-        sendProgress("affinity", "Affinite CPU (cores 0-5) et priorite HIGH appliquees");
+        sendProgress("affinity", "Affinite CPU appliquee (cores 0-5)");
       } catch { /* Fortnite peut ne pas etre encore lance */ }
     }, 35000);
 
@@ -1705,6 +1704,228 @@ if ($proc) {
   } catch (e: unknown) {
     sendProgress("error", String(e), true);
     return { ok: false, error: String(e) };
+  }
+});
+
+// ─── IPC: Detect disk types (SSD / HDD) ──────────────────────────────────────
+ipcMain.handle("detect-disk-types", async () => {
+  const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+$hasSSD = $false
+$hasHDD = $false
+try {
+  $disks = Get-PhysicalDisk -ErrorAction Stop
+  foreach ($d in $disks) {
+    if ($d.MediaType -eq 'SSD') { $hasSSD = $true }
+    elseif ($d.MediaType -eq 'HDD') { $hasHDD = $true }
+    elseif ($d.FriendlyName -match 'NVMe|NVME|SSD|M\\.2|SKHynix|Samsung|WD_BLACK|980|970|860|870|870') { $hasSSD = $true }
+    elseif ($d.FriendlyName -match '^WDC WD[0-9]|^ST[0-9]|^TOSHIBA|Hitachi|HGST|SPZX|SPCX') { $hasHDD = $true }
+    elseif ($d.MediaType -eq 'Unspecified' -and $d.Size -lt 512GB) { $hasSSD = $true }
+  }
+} catch {
+  try {
+    $wmiDisks = Get-WmiObject -Class Win32_DiskDrive -ErrorAction Stop
+    foreach ($d in $wmiDisks) {
+      if ($d.Caption -match 'NVMe|NVME|SSD|M\\.2' -or $d.MediaType -match 'Solid') { $hasSSD = $true }
+      else { $hasHDD = $true }
+    }
+  } catch {}
+}
+@{ hasSSD = [bool]$hasSSD; hasHDD = [bool]$hasHDD } | ConvertTo-Json
+`;
+  try {
+    const out = await runPs1(script, false, 8000);
+    return JSON.parse(out);
+  } catch {
+    return { hasSSD: false, hasHDD: false };
+  }
+});
+
+// ─── IPC: Network — Detect adapters ──────────────────────────────────────────
+ipcMain.handle("detect-net-adapters", async () => {
+  const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+$adapters = Get-NetAdapter | Where-Object Status -eq 'Up'
+$wifi = @(); $ethernet = @()
+foreach ($a in $adapters) {
+  $info = @{ name = $a.Name; description = $a.InterfaceDescription; status = [string]$a.Status }
+  $isWifi = ($a.PhysicalMediaType -match 'WiFi|802\\.11|NativeWifi|Native 802\\.11') -or ($a.Name -match 'Wi.Fi|WiFi|WLAN|Wireless|Wi-Fi')
+  if ($isWifi) { $wifi += $info } else { $ethernet += $info }
+}
+@{ wifi = $wifi; ethernet = $ethernet } | ConvertTo-Json -Depth 4
+`;
+  try { return JSON.parse(await runPs1(script, false, 8000)); }
+  catch { return { wifi: [], ethernet: [] }; }
+});
+
+// ─── IPC: Network — Apply adapter preset ─────────────────────────────────────
+ipcMain.handle("apply-adapter-preset", async (_e, adapterName: string, type: "wifi" | "ethernet") => {
+  const dataDir = join(app.getPath("userData"), "AdapterBackups");
+  fs.mkdirSync(dataDir, { recursive: true });
+  const backupPath = join(dataDir, `adapter_${type}_${Date.now()}.json`);
+
+  const backupScript = `
+$ErrorActionPreference = 'SilentlyContinue'
+$props = Get-NetAdapterAdvancedProperty -Name "${adapterName.replace(/"/g, "")}" -ErrorAction SilentlyContinue |
+  Select-Object RegistryKeyword, DisplayValue, RegistryValue, ValidDisplayValues
+if ($props) { $props | ConvertTo-Json -Depth 3 } else { '[]' }
+`;
+  let backupData = "[]";
+  try { backupData = await runPs1(backupScript, false, 8000); } catch { /* continue */ }
+  fs.writeFileSync(backupPath, JSON.stringify({ adapterName, type, timestamp: Date.now(), rawJson: backupData }), "utf-8");
+
+  const props: [string, string][] = [
+    ["*UAPSDSupport", "0"],
+    ["*EEE", "0"],
+    ["EEELinkAdvertisement", "0"],
+    ["*RoamAggressiveness", "0"],
+    ["*WakeOnMagicPacket", "0"],
+    ["*WakeOnPattern", "0"],
+    ["*InterruptModeration", "0"],
+    ["*PacketCoalescing", "0"],
+    ["*LsoV2IPv4", "0"],
+    ["*LsoV2IPv6", "0"],
+    ["HtMode", "0"],
+    ["HTMode", "0"],
+    ["HTPowerSaveMode", "0"],
+    ...(type === "ethernet" ? [["*FlowControl", "0"] as [string, string], ["*JumboPacket", "1514"] as [string, string]] : []),
+  ];
+
+  const setLines = props.map(([kw, val]) =>
+    `try { Set-NetAdapterAdvancedProperty -Name "${adapterName.replace(/"/g, "")}" -RegistryKeyword "${kw}" -RegistryValue ${val} -ErrorAction SilentlyContinue } catch {}`
+  ).join("\n");
+
+  const applyScript = `$ErrorActionPreference = 'SilentlyContinue'\n${setLines}\nWrite-Host 'OK'`;
+  try {
+    await runPs1(applyScript, true, 30000);
+    return { ok: true, backupPath };
+  } catch (e: unknown) {
+    return { ok: false, backupPath, error: String(e) };
+  }
+});
+
+// ─── IPC: Network — Restore adapter preset ───────────────────────────────────
+ipcMain.handle("restore-adapter-preset", async (_e, backupPath: string) => {
+  if (!fs.existsSync(backupPath)) return { ok: false, error: "Fichier de backup introuvable." };
+  try {
+    const saved = JSON.parse(fs.readFileSync(backupPath, "utf-8"));
+    const { adapterName, rawJson } = saved;
+    const props: Array<{ RegistryKeyword: string; RegistryValue: string }> = JSON.parse(rawJson || "[]");
+    if (!Array.isArray(props) || props.length === 0) return { ok: false, error: "Aucune propriété sauvegardée." };
+
+    const setLines = props.map(p =>
+      `try { Set-NetAdapterAdvancedProperty -Name "${String(adapterName).replace(/"/g, "")}" -RegistryKeyword "${String(p.RegistryKeyword).replace(/"/g, "")}" -RegistryValue ${JSON.stringify(String(p.RegistryValue))} -ErrorAction SilentlyContinue } catch {}`
+    ).join("\n");
+    const script = `$ErrorActionPreference = 'SilentlyContinue'\n${setLines}\nWrite-Host 'OK'`;
+    await runPs1(script, true, 30000);
+    return { ok: true };
+  } catch (e: unknown) {
+    return { ok: false, error: String(e) };
+  }
+});
+
+// ─── IPC: Network — QoS policies ─────────────────────────────────────────────
+ipcMain.handle("list-qos-policies", async () => {
+  const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+$policies = Get-NetQosPolicy -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'Kermouk*' }
+if ($policies) { $policies | Select-Object Name, AppPathName, DSCPAction, PriorityValue | ConvertTo-Json -Depth 2 }
+else { '[]' }
+`;
+  try { const out = await runPs1(script, false, 8000); return JSON.parse(out || "[]"); }
+  catch { return []; }
+});
+
+ipcMain.handle("create-qos-policy", async (_e, name: string, appPath: string, dscpValue: number) => {
+  const safeName = name.replace(/"/g, "");
+  const safeApp = appPath.replace(/"/g, "");
+  const script = `
+$ErrorActionPreference = 'Stop'
+try {
+  $existing = Get-NetQosPolicy -Name "${safeName}" -ErrorAction SilentlyContinue
+  if ($existing) { Remove-NetQosPolicy -Name "${safeName}" -Confirm:$false -ErrorAction SilentlyContinue }
+  New-NetQosPolicy -Name "${safeName}" -AppPathNameMatchCondition "${safeApp}" -IPProtocolMatchCondition Both -DSCPAction ${dscpValue} -NetworkProfile All
+  Write-Host 'OK'
+} catch { Write-Host "ERR:$_" }
+`;
+  try {
+    const out = await runPs1(script, true, 15000);
+    if (out.includes("OK")) return { ok: true };
+    return { ok: false, error: out.replace("ERR:", "") };
+  } catch (e: unknown) { return { ok: false, error: String(e) }; }
+});
+
+ipcMain.handle("delete-qos-policy", async (_e, name: string) => {
+  const safeName = name.replace(/"/g, "");
+  const script = `Remove-NetQosPolicy -Name "${safeName}" -Confirm:$false -ErrorAction SilentlyContinue; Write-Host 'OK'`;
+  try {
+    await runPs1(script, true, 10000);
+    return { ok: true };
+  } catch (e: unknown) { return { ok: false, error: String(e) }; }
+});
+
+ipcMain.handle("detect-fortnite-path", async () => {
+  const localApp = process.env.LOCALAPPDATA || join(os.homedir(), "AppData", "Local");
+  const exeName = "FortniteClient-Win64-Shipping.exe";
+  const basePaths = [
+    join("C:\\", "Program Files", "Epic Games", "Fortnite", "FortniteGame", "Binaries", "Win64", exeName),
+    join("D:\\", "Program Files", "Epic Games", "Fortnite", "FortniteGame", "Binaries", "Win64", exeName),
+    join("E:\\", "Program Files", "Epic Games", "Fortnite", "FortniteGame", "Binaries", "Win64", exeName),
+    join(localApp, "..", "Local", "FortniteGame", "Binaries", "Win64", exeName),
+  ];
+  for (const p of basePaths) {
+    if (fs.existsSync(p)) return { found: true, path: p };
+  }
+  try {
+    const { stdout } = await execAsync(`where ${exeName} 2>nul`, { timeout: 3000 });
+    const p = stdout.trim().split("\n")[0].trim();
+    if (p && fs.existsSync(p)) return { found: true, path: p };
+  } catch { /* not in PATH */ }
+  return { found: false, path: exeName };
+});
+
+// ─── IPC: Apply Basic Services Preset ────────────────────────────────────────
+ipcMain.handle("apply-basic-services-preset", async () => {
+  let backupId: string | null = null;
+  try {
+    backupId = await createBackup("Avant preset Basic Services", "manual");
+  } catch { /* backup non bloquant */ }
+
+  const batContent = `@echo off
+sc stop DiagTrack >nul 2>&1
+sc config DiagTrack start=demand >nul 2>&1
+sc stop dmwappushservice >nul 2>&1
+sc config dmwappushservice start=demand >nul 2>&1
+sc stop SensorService >nul 2>&1
+sc config SensorService start=demand >nul 2>&1
+sc stop lfsvc >nul 2>&1
+sc config lfsvc start=demand >nul 2>&1
+sc stop MicrosoftEdgeElevationService >nul 2>&1
+sc config MicrosoftEdgeElevationService start=demand >nul 2>&1
+sc stop edgeupdate >nul 2>&1
+sc config edgeupdate start=demand >nul 2>&1
+sc stop edgeupdatem >nul 2>&1
+sc config edgeupdatem start=demand >nul 2>&1
+sc stop WMPNetworkSvc >nul 2>&1
+sc config WMPNetworkSvc start=demand >nul 2>&1
+sc stop RemoteRegistry >nul 2>&1
+sc config RemoteRegistry start=disabled >nul 2>&1
+sc stop MapsBroker >nul 2>&1
+sc config MapsBroker start=disabled >nul 2>&1
+sc stop RetailDemo >nul 2>&1
+sc config RetailDemo start=disabled >nul 2>&1
+echo BASIC_PRESET_OK
+`;
+  const batPath = join(SCRIPTS_DIR, `svc_preset_${Date.now()}.bat`);
+  try {
+    fs.writeFileSync(batPath, batContent, "latin1");
+    const cmd = `powershell -Command "Start-Process cmd.exe -ArgumentList '/c \\"${batPath.replace(/\\/g, "\\\\")}\\""' -Verb RunAs -Wait"`;
+    await execAsync(cmd, { timeout: 60000 });
+    return { ok: true, backupId };
+  } catch (e: unknown) {
+    return { ok: false, backupId, error: String(e) };
+  } finally {
+    if (fs.existsSync(batPath)) fs.unlinkSync(batPath);
   }
 });
 

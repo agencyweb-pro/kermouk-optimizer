@@ -47,6 +47,21 @@ contextBridge.exposeInMainWorld("kermouk", {
   // Driver info
   getDriverInfo: () => ipcRenderer.invoke("get-driver-info"),
 
+  // Disk type detection
+  detectDiskTypes: () => ipcRenderer.invoke("detect-disk-types"),
+
+  // Services preset
+  applyBasicServicesPreset: () => ipcRenderer.invoke("apply-basic-services-preset"),
+
+  // Network Adapter Tuner + QoS
+  detectNetAdapters: () => ipcRenderer.invoke("detect-net-adapters"),
+  applyAdapterPreset: (adapterName: string, type: "wifi" | "ethernet") => ipcRenderer.invoke("apply-adapter-preset", adapterName, type),
+  restoreAdapterPreset: (backupPath: string) => ipcRenderer.invoke("restore-adapter-preset", backupPath),
+  listQosPolicies: () => ipcRenderer.invoke("list-qos-policies"),
+  createQosPolicy: (name: string, appPath: string, dscpValue: number) => ipcRenderer.invoke("create-qos-policy", name, appPath, dscpValue),
+  deleteQosPolicy: (name: string) => ipcRenderer.invoke("delete-qos-policy", name),
+  detectFortnitePath: () => ipcRenderer.invoke("detect-fortnite-path"),
+
   // Streaming mode
   applyStreamingMode: () => ipcRenderer.invoke("apply-streaming-mode"),
 

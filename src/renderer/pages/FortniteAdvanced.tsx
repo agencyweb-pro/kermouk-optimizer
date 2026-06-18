@@ -28,6 +28,8 @@ export default function FortniteAdvanced({ isPremium, openLicenseModal }: Props)
   const [eacStatus, setEacStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [eacMsg, setEacMsg] = useState("");
   const [fseStatus, setFseStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [hagsStatus, setHagsStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [nagleStatus, setNagleStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [modeStatus, setModeStatus] = useState<"idle" | "applying">("idle");
   const [modeLogs, setModeLogs] = useState<LogEntry[]>([]);
 
@@ -71,17 +73,17 @@ export default function FortniteAdvanced({ isPremium, openLicenseModal }: Props)
     const bat = generateBatScript([
       {
         id: "fn-proc-priority",
-        name: "Priorité Fortnite HIGH",
+        name: "Priorité Fortnite Above Normal",
         description: "",
         category: "premium",
         commands: [],
         powershellCommands: [
-          'Get-Process -Name "EpicGamesLauncher" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High }',
-          'Get-Process -Name "FortniteClient-Win64-Shipping" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High }',
+          'Get-Process -Name "EpicGamesLauncher" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::AboveNormal }',
+          'Get-Process -Name "FortniteClient-Win64-Shipping" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::AboveNormal }',
         ],
       },
     ]);
-    const result = await window.kermouk.applyTweaks(bat, ["Priorité Fortnite HIGH"]);
+    const result = await window.kermouk.applyTweaks(bat, ["Priorité Fortnite Above Normal"]);
     setPriorityStatus(result.ok ? "ok" : "error");
     if (result.ok) {
       const prev = parseInt(localStorage.getItem("kermouk_tweaks_count") || "0");
@@ -199,6 +201,34 @@ export default function FortniteAdvanced({ isPremium, openLicenseModal }: Props)
     ].join("\r\n");
     const result = await window.kermouk.applyTweaks(bat, ["FSE Fullscreen Optimizations Off"]);
     setFseStatus(result.ok ? "ok" : "error");
+    if (result.ok) {
+      const prev = parseInt(localStorage.getItem("kermouk_tweaks_count") || "0");
+      localStorage.setItem("kermouk_tweaks_count", String(prev + 1));
+    }
+  };
+
+  const handleHags = async () => {
+    if (!isPremium) { openLicenseModal(); return; }
+    setHagsStatus("loading");
+    const tweak = ALL_TWEAKS.find(t => t.id === "gpu-hwsched");
+    if (!tweak) { setHagsStatus("error"); return; }
+    const bat = generateBatScript([tweak]);
+    const result = await window.kermouk.applyTweaks(bat, [tweak.name]);
+    setHagsStatus(result.ok ? "ok" : "error");
+    if (result.ok) {
+      const prev = parseInt(localStorage.getItem("kermouk_tweaks_count") || "0");
+      localStorage.setItem("kermouk_tweaks_count", String(prev + 1));
+    }
+  };
+
+  const handleNagle = async () => {
+    if (!isPremium) { openLicenseModal(); return; }
+    setNagleStatus("loading");
+    const tweak = ALL_TWEAKS.find(t => t.id === "nagle-algorithm");
+    if (!tweak) { setNagleStatus("error"); return; }
+    const bat = generateBatScript([tweak]);
+    const result = await window.kermouk.applyTweaks(bat, [tweak.name]);
+    setNagleStatus(result.ok ? "ok" : "error");
     if (result.ok) {
       const prev = parseInt(localStorage.getItem("kermouk_tweaks_count") || "0");
       localStorage.setItem("kermouk_tweaks_count", String(prev + 1));
@@ -345,16 +375,20 @@ export default function FortniteAdvanced({ isPremium, openLicenseModal }: Props)
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
               <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", color: "#e0e0e0" }}>
-                Priorité Processus Fortnite HIGH
+                Priorité Processus (Above Normal)
               </span>
               <span className="badge badge-premium">PREMIUM</span>
+              <span style={{ fontSize: "9px", color: "#f59e0b", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "3px", padding: "1px 6px", fontFamily: "Rajdhani, sans-serif", fontWeight: 700 }}>⚠ OPTION AVANCÉE</span>
             </div>
             <div style={{ fontSize: "11px", color: "#555", lineHeight: 1.6 }}>
-              Met EpicGamesLauncher et FortniteClient-Win64-Shipping en priorité Haute immédiatement.
-              <strong style={{ color: "#888" }}> Fortnite doit être ouvert.</strong>
+              Met Fortnite en priorité Above Normal. <strong style={{ color: "#888" }}>Fortnite doit être ouvert.</strong>
+            </div>
+            <div style={{ marginTop: "5px", fontSize: "10px", color: "#f59e0b", lineHeight: 1.5 }}>
+              ⚠ La priorité High (ancienne valeur) peut AUGMENTER l&apos;input lag en affamant les pilotes souris/clavier.
+              Above Normal est plus sûr — laisser Windows gérer reste la recommandation principale.
             </div>
             {priorityStatus === "ok" && (
-              <div style={{ fontSize: "11px", color: "#22c55e", marginTop: "6px" }}>✓ Priorité HIGH appliquée !</div>
+              <div style={{ fontSize: "11px", color: "#22c55e", marginTop: "6px" }}>✓ Priorité Above Normal appliquée !</div>
             )}
             {priorityStatus === "error" && (
               <div style={{ fontSize: "11px", color: "#ef4444", marginTop: "6px" }}>✗ Échec (Fortnite ouvert ?)</div>
@@ -431,6 +465,64 @@ export default function FortniteAdvanced({ isPremium, openLicenseModal }: Props)
           >
             <StatusIcon status={fseStatus} />
             {fseStatus === "loading" ? "Application..." : fseStatus === "ok" ? "Réappliquer" : "Appliquer"}
+          </button>
+        </div>
+      </div>
+
+      {/* Hardware-Accelerated GPU Scheduling */}
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+              <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", color: "#e0e0e0" }}>
+                Hardware-Accelerated GPU Scheduling
+              </span>
+              <span className="badge badge-premium">PREMIUM</span>
+            </div>
+            <div style={{ fontSize: "11px", color: "#555", lineHeight: 1.6 }}>
+              Active HAGS (<code style={{ color: "#888", fontSize: "10px" }}>HwSchMode=2</code>) — réduit la latence GPU en donnant au driver
+              le contrôle direct du scheduling. Nécessite un GPU récent (NVIDIA 10xx+ / AMD RX 5000+) et Windows 10 2004+.
+            </div>
+            {hagsStatus === "ok" && <div style={{ fontSize: "11px", color: "#22c55e", marginTop: "6px" }}>✓ HAGS activé — redémarre pour appliquer.</div>}
+            {hagsStatus === "error" && <div style={{ fontSize: "11px", color: "#ef4444", marginTop: "6px" }}>✗ Échec (GPU non compatible ou droits insuffisants).</div>}
+          </div>
+          <button
+            onClick={handleHags}
+            disabled={hagsStatus === "loading"}
+            className="btn-primary"
+            style={{ padding: "10px 16px", fontSize: "12px", flexShrink: 0, display: "flex", alignItems: "center", gap: "6px" }}
+          >
+            <StatusIcon status={hagsStatus} />
+            {hagsStatus === "loading" ? "Application..." : hagsStatus === "ok" ? "Réappliquer" : "Activer HAGS"}
+          </button>
+        </div>
+      </div>
+
+      {/* Désactivation algorithme de Nagle */}
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+              <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", color: "#e0e0e0" }}>
+                Désactiver l&apos;Algorithme de Nagle
+              </span>
+              <span className="badge badge-premium">PREMIUM</span>
+            </div>
+            <div style={{ fontSize: "11px", color: "#555", lineHeight: 1.6 }}>
+              Active <code style={{ color: "#888", fontSize: "10px" }}>TcpAckFrequency=1</code> et <code style={{ color: "#888", fontSize: "10px" }}>TCPNoDelay=1</code> sur
+              toutes les interfaces réseau — élimine le buffering TCP qui regroupe les petits paquets, réduisant la latence réseau en jeu.
+            </div>
+            {nagleStatus === "ok" && <div style={{ fontSize: "11px", color: "#22c55e", marginTop: "6px" }}>✓ Nagle désactivé sur toutes les interfaces.</div>}
+            {nagleStatus === "error" && <div style={{ fontSize: "11px", color: "#ef4444", marginTop: "6px" }}>✗ Échec de l&apos;application.</div>}
+          </div>
+          <button
+            onClick={handleNagle}
+            disabled={nagleStatus === "loading"}
+            className="btn-primary"
+            style={{ padding: "10px 16px", fontSize: "12px", flexShrink: 0, display: "flex", alignItems: "center", gap: "6px" }}
+          >
+            <StatusIcon status={nagleStatus} />
+            {nagleStatus === "loading" ? "Application..." : nagleStatus === "ok" ? "Réappliquer" : "Désactiver Nagle"}
           </button>
         </div>
       </div>

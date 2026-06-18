@@ -5,14 +5,15 @@ import type { Tweak } from "../utils/tweakEngine";
 const FORTNITE_TWEAKS: Tweak[] = [
   {
     id: "fortnite-priority",
-    name: "Priorité Processus Fortnite",
+    name: "Priorité Processus Fortnite (Above Normal)",
     description:
-      "Met EpicGamesLauncher et FortniteClient-Win64-Shipping en priorité Haute (High) pour une meilleure allocation CPU.",
+      "Met EpicGamesLauncher et FortniteClient-Win64-Shipping en priorité Above Normal. Option avancée — laissée décochée par défaut.",
+    warning: "La priorité High (ancienne valeur) peut AUGMENTER l'input lag en affamant les pilotes souris/clavier — documenté par EXM Tweaks. Cette version utilise Above Normal, nettement plus sûre. Laisser Windows gérer (Normal) reste la recommandation principale.",
     category: "premium",
     commands: [],
     powershellCommands: [
-      'Get-Process -Name "EpicGamesLauncher" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High }',
-      'Get-Process -Name "FortniteClient-Win64-Shipping" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::High }',
+      'Get-Process -Name "EpicGamesLauncher" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::AboveNormal }',
+      'Get-Process -Name "FortniteClient-Win64-Shipping" -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::AboveNormal }',
     ],
   },
   {
@@ -189,6 +190,11 @@ export default function FortniteTweaks({ isPremium, openLicenseModal }: Props) {
                     )}
                   </div>
                   <div style={{ fontSize: "11px", color: "#444", lineHeight: 1.5 }}>{tweak.description}</div>
+                  {tweak.warning && (
+                    <div style={{ marginTop: "6px", fontSize: "10px", color: "#f59e0b", background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: "4px", padding: "5px 8px", lineHeight: 1.5 }}>
+                      ⚠ {tweak.warning}
+                    </div>
+                  )}
                 </div>
                 <label className="toggle">
                   <input

@@ -7,6 +7,8 @@ export interface Tweak {
   registryCommands?: string[];
   powershellCommands?: string[];
   serviceCommands?: string[];
+  warning?: string;
+  win11Only?: boolean;
 }
 
 export const FREE_TWEAKS: Tweak[] = [
@@ -133,6 +135,24 @@ export const PREMIUM_TWEAKS: Tweak[] = [
       "netsh int tcp set global dca=enabled",
       "netsh int tcp set global netdma=enabled",
     ],
+  },
+  {
+    id: "tcp-heuristics-disable",
+    name: "Désactiver Heuristiques TCP",
+    description: "Désactive les heuristiques TCP Windows (netsh int tcp set heuristics disabled) qui peuvent modifier automatiquement les réglages TCP manuels — préserve les tweaks appliqués manuellement.",
+    category: "premium",
+    commands: ["netsh int tcp set heuristics disabled"],
+  },
+  {
+    id: "network-lso-disable",
+    name: "Désactiver Large Send Offload (LSO)",
+    description: "Désactive le Large Send Offload sur tous les adaptateurs réseau actifs — réduit la latence de traitement des paquets en forçant le CPU à gérer la segmentation TCP.",
+    category: "premium",
+    warning: "Peut légèrement augmenter la charge CPU réseau. Réactivez si vous constatez une dégradation du débit.",
+    powershellCommands: [
+      "Get-NetAdapter | Where-Object Status -eq 'Up' | ForEach-Object { Set-NetAdapterLso -Name $_.Name -IPv4Enabled $false -IPv6Enabled $false -ErrorAction SilentlyContinue }",
+    ],
+    commands: [],
   },
   {
     id: "dns-cloudflare",
@@ -373,8 +393,9 @@ export const PREMIUM_TWEAKS: Tweak[] = [
   {
     id: "disable-power-throttling",
     name: "Desactivation PowerThrottling",
-    description: "Desactive le throttling CPU de Windows pour les apps gaming. Crucial sur laptop.",
+    description: "Desactive le throttling CPU de Windows (PowerThrottlingOff=1) pour que le processeur maintienne sa frequence maximale en jeu.",
     category: "premium",
+    warning: "Non recommande sur laptop sans bon refroidissement — risque de surchauffe sous charge prolongee (i5-10300H notamment). A eviter sur secteur si les temperatures depassent 90°C.",
     commands: [],
     registryCommands: [
       'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power\\PowerThrottling" /v "PowerThrottlingOff" /t REG_DWORD /d 1 /f',
@@ -390,12 +411,12 @@ export const PREMIUM_TWEAKS: Tweak[] = [
   // ── TWEAKS D:\OPTI KERMOUK ───────────────────────────────────────────────────
   {
     id: "win32-priority-separation",
-    name: "Win32PrioritySeparation Gaming (42)",
-    description: "Configure Win32PrioritySeparation=42 pour maximiser la tranche CPU allouee aux programmes en avant-plan.",
+    name: "Win32PrioritySeparation Gaming (0x26)",
+    description: "Configure Win32PrioritySeparation=0x26 (38 decimal) : intervalles courts, separation maximale foreground/background. L'avant-plan (jeu) recoit 3x plus de CPU que les processus en fond.",
     category: "premium",
     commands: [],
     registryCommands: [
-      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 42 /f',
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 38 /f',
     ],
   },
   {
@@ -489,6 +510,669 @@ export const PREMIUM_TWEAKS: Tweak[] = [
     registryCommands: [
       'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control" /v SvcHostSplitThresholdInKB /t REG_DWORD /d 3200000 /f',
     ],
+  },
+  // ── RÉSEAU — NCSI & NetBIOS ──────────────────────────────────────────────────
+  {
+    id: "ncsi-disable",
+    name: "Desactivation Sondes NCSI (ActiveProbing)",
+    description: "Desactive les sondes de connectivite Windows (EnableActiveProbing=0) qui envoient des requetes HTTP periodiques en arriere-plan — libere de la bande passante et reduit les pics de ping.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\NlaSvc\\Parameters\\Internet" /v EnableActiveProbing /t REG_DWORD /d 0 /f',
+    ],
+  },
+  {
+    id: "netbios-disable",
+    name: "Desactivation NetBIOS over TCP/IP",
+    description: "Desactive NetBIOS sur toutes les interfaces reseau (NetbiosOptions=2). Elimine les broadcasts reseau inutiles et reduit la surface d'attaque.",
+    category: "premium",
+    commands: [],
+    powershellCommands: [
+      'Get-ChildItem "HKLM:\\SYSTEM\\CurrentControlSet\\services\\NetBT\\Parameters\\Interfaces" | ForEach-Object { Set-ItemProperty -Path $_.PSPath -Name NetbiosOptions -Value 2 -ErrorAction SilentlyContinue }',
+    ],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\NetBT\\Parameters" /v NodeType /t REG_DWORD /d 2 /f',
+    ],
+  },
+  // ── GPU — DisablePreemption ───────────────────────────────────────────────────
+  {
+    id: "gpu-disable-preemption",
+    name: "Desactivation Preemption GPU (Scheduler)",
+    description: "Desactive la preemption du scheduler GPU (EnablePreemption=0) pour eviter les interruptions en plein rendu et reduire les micro-stutters.",
+    category: "premium",
+    warning: "Peut degrader la reactivite en multitache et lors des alt-tab. Recommande uniquement sur un PC dedie au jeu sans autres charges lourdes en parallele.",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers\\Scheduler" /v EnablePreemption /t REG_DWORD /d 0 /f',
+    ],
+  },
+  // ── GPU — HDCP NVIDIA ─────────────────────────────────────────────────────────
+  {
+    id: "nvidia-hdcp-disable",
+    name: "Desactivation HDCP (NVIDIA uniquement)",
+    description: "Desactive HDCP sur le GPU NVIDIA (RMHdcpKeyglobZero=1) pour eliminer le handshake de protection du contenu qui peut ajouter de la latence sur certains ecrans. Sans effet sur GPU AMD.",
+    category: "premium",
+    commands: [],
+    powershellCommands: [
+      'Get-ChildItem "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}" | Where-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DriverDesc -like "*NVIDIA*" } | ForEach-Object { Set-ItemProperty -Path $_.PSPath -Name RMHdcpKeyglobZero -Value 1 -Type DWord -ErrorAction SilentlyContinue }',
+    ],
+  },
+  // ── PÉRIPHÉRIQUES — USB SelectiveSuspend ─────────────────────────────────────
+  {
+    id: "usb-selective-suspend-off",
+    name: "Desactivation USB Selective Suspend",
+    description: "Empeche Windows de suspendre les peripheriques USB (DisableSelectiveSuspend=1). Elimine les micro-freezes de 1-2ms sur souris et clavier USB lors du reveil du peripherique.",
+    category: "premium",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Services\\USB" /v DisableSelectiveSuspend /t REG_DWORD /d 1 /f',
+    ],
+  },
+  // ── SÉCURITÉ — Core Isolation ─────────────────────────────────────────────────
+  {
+    id: "core-isolation-off",
+    name: "Desactivation Core Isolation (Memory Integrity)",
+    description: "Desactive Hypervisor-Protected Code Integrity (HVCI). Libere de la RAM et reduit la charge CPU sur les PC sans VBS hardware requis.",
+    category: "premium",
+    warning: "SECURITE REDUITE — Cette option desactive la protection contre les exploits noyau (Memory Integrity). Risque eleve si vous naviguez sur des sites non fiables ou installez des drivers non signes. Ne jamais activer automatiquement. Desactive par defaut.",
+    commands: [],
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity" /v Enabled /t REG_DWORD /d 0 /f',
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard" /v EnableVirtualizationBasedSecurity /t REG_DWORD /d 0 /f',
+    ],
+  },
+  // ── GPU NVIDIA exclusifs ──────────────────────────────────────────────────────
+  {
+    id: "nvidia-geforce-update-disable",
+    name: "Désactiver mise à jour GeForce Experience",
+    description: "Désactive le service de télémétrie NVIDIA (NvTmSvc) qui gère les notifications et vérifications de mise à jour du pilote via GeForce Experience.",
+    category: "premium",
+    serviceCommands: [
+      "sc stop NvTmSvc",
+      "sc config NvTmSvc start=disabled",
+      "sc stop NvTmRepOnError",
+      "sc config NvTmRepOnError start=disabled",
+    ],
+    registryCommands: [
+      'reg add "HKCU\\SOFTWARE\\NVIDIA Corporation\\NvControlPanel2\\Client" /v "OptInOrOutPreference" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "nvidia-contiguous-memory",
+    name: "Allocation Mémoire Contiguë GPU NVIDIA",
+    description: "Demande au driver NVIDIA de prioriser les allocations contiguës en VRAM pour réduire la fragmentation mémoire GPU et améliorer la stabilité des framerates.",
+    category: "premium",
+    warning: "Expérimental — effet variable selon la version du driver NVIDIA installée. Nécessite un redémarrage pour être pris en compte.",
+    powershellCommands: [
+      'Get-ChildItem "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}" -ErrorAction SilentlyContinue | Where-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DriverDesc -like "*NVIDIA*" } | ForEach-Object { Set-ItemProperty -Path $_.PSPath -Name "PreferContiguousAlloc" -Value 1 -Type DWord -ErrorAction SilentlyContinue }',
+    ],
+    commands: [],
+  },
+  {
+    id: "nvidia-uvm-disable",
+    name: "Désactiver NVIDIA UVM (Unified Virtual Memory)",
+    description: "Tente de désactiver le composant Unified Virtual Memory du driver NVIDIA (utilisé par CUDA). Sur GTX/RTX grand public, l'UVM est intégré au driver — l'effet est généralement nul sans danger.",
+    category: "premium",
+    warning: "AVERTISSEMENT — Casse les applications CUDA : Adobe Premiere, DaVinci Resolve, Blender GPU, certains encodeurs de capture/streaming. Ne pas activer sur un PC de streaming ou de montage. Sur GTX/RTX grand public, l'UVM ne peut pas être désactivé par l'OS.",
+    powershellCommands: [
+      '$d = Get-PnpDevice | Where-Object { $_.FriendlyName -match "NVIDIA.*UVM|NVIDIA.*Virtual" } | Select-Object -First 1; if ($d) { Disable-PnpDevice -InstanceId $d.InstanceId -Confirm:$false -ErrorAction SilentlyContinue }',
+    ],
+    commands: [],
+  },
+  {
+    id: "nvidia-dma-remapping-disable",
+    name: "Désactiver DMA Remapping NVIDIA",
+    description: "Désactive le DMA Remapping dans le registre du driver NVIDIA pour réduire la surcharge du mapping mémoire DMA — peut abaisser la latence des transferts CPU/GPU.",
+    category: "premium",
+    warning: "Protection mémoire DMA réduite — diminue légèrement la protection contre les accès PCIe/Thunderbolt non autorisés. Impact minimal pour un usage gaming sans périphériques non fiables.",
+    powershellCommands: [
+      'Get-ChildItem "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}" -ErrorAction SilentlyContinue | Where-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DriverDesc -like "*NVIDIA*" } | ForEach-Object { Set-ItemProperty -Path $_.PSPath -Name "EnableDmaRemapping" -Value 0 -Type DWord -ErrorAction SilentlyContinue }',
+    ],
+    commands: [],
+  },
+  {
+    id: "nvidia-idle-threshold",
+    name: "Optimiser Seuils d'Inactivité GPU NVIDIA",
+    description: "Configure PowerMizer NVIDIA pour maintenir les moteurs GPU actifs plus longtemps avant de réduire les fréquences — réduit les micro-stutters lors des transitions entre scènes.",
+    category: "premium",
+    warning: "Sur laptop (GTX 1650 Ti), peut augmenter légèrement la consommation et la chaleur GPU au repos. Surveiller les températures après application.",
+    powershellCommands: [
+      'Get-ChildItem "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}" -ErrorAction SilentlyContinue | Where-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DriverDesc -like "*NVIDIA*" } | ForEach-Object { Set-ItemProperty -Path $_.PSPath -Name "PowerMizerLevel" -Value 1 -Type DWord -ErrorAction SilentlyContinue; Set-ItemProperty -Path $_.PSPath -Name "PowerMizerLevelAC" -Value 1 -Type DWord -ErrorAction SilentlyContinue }',
+    ],
+    commands: [],
+  },
+  // ── CPU (nouveaux) ────────────────────────────────────────────────────────────
+  {
+    id: "disable-cstates",
+    name: "Désactiver C-States CPU (états basse conso)",
+    description: "Empêche le CPU d'entrer dans les états d'économie d'énergie C1/C2/C3 — maintient tous les coeurs en état actif C0 permanent pour une latence d'input minimale.",
+    category: "premium",
+    warning: "AVERTISSEMENT FORT — Augmente significativement la consommation électrique et la chaleur CPU. Fortement déconseillé sur laptop (i5-10300H) sans refroidissement renforcé. À utiliser uniquement branché secteur et en jeu actif.",
+    commands: [
+      "powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR IDLEDISABLE 1",
+      "powercfg -setdcvalueindex SCHEME_CURRENT SUB_PROCESSOR IDLEDISABLE 1",
+      "powercfg -setactive SCHEME_CURRENT",
+    ],
+  },
+  {
+    id: "disable-coalescable-timer",
+    name: "Désactiver Coalescable Timer",
+    description: "Empêche le noyau Windows de regrouper les événements timer pour économiser de l'énergie (CoalesceTimerInterval=0) — chaque tick est traité immédiatement, réduisant la latence d'input et les micro-stutters.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\kernel" /v "CoalesceTimerInterval" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "cpu-max-performance",
+    name: "État Processeur Min/Max à 100% + Perf Max",
+    description: "Force le CPU à 100% de fréquence minimum et maximum (PROCTHROTTLEMIN/MAX=100%) et configure la préférence d'énergie sur Performance maximale — aucune réduction de fréquence en jeu.",
+    category: "premium",
+    warning: "AVERTISSEMENT FORT — Empêche tout ajustement dynamique de fréquence CPU. Augmente significativement la chaleur et la consommation. Déconseillé sur laptop (i5-10300H) sans refroidissement renforcé — vérifiez que les températures restent sous 90°C sous charge.",
+    commands: [
+      "powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN 100",
+      "powercfg -setdcvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN 100",
+      "powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100",
+      "powercfg -setdcvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMAX 100",
+      "powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR ENERGYPREFERENCE 0",
+      "powercfg -setdcvalueindex SCHEME_CURRENT SUB_PROCESSOR ENERGYPREFERENCE 0",
+      "powercfg -setactive SCHEME_CURRENT",
+    ],
+  },
+  {
+    id: "disable-modern-standby",
+    name: "Désactiver Modern Standby (S0 Low Power Idle)",
+    description: "Désactive le mode Connected Standby/Modern Standby pour revenir à la veille S3 classique — évite les micro-réveils en arrière-plan pendant la veille laptop.",
+    category: "premium",
+    warning: "Change le comportement de veille du laptop — le couvercle fermé ne déclenche plus une veille connectée. Peut affecter l'autonomie batterie si le PC est mis en veille sans extinction. Nécessite un redémarrage.",
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power" /v "CsEnabled" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  // ── RAM (nouveaux) ────────────────────────────────────────────────────────────
+  {
+    id: "clear-pagefile-shutdown",
+    name: "Vider la Page File à l'Arrêt",
+    description: "Configure Windows pour effacer le fichier d'échange (pagefile.sys) à chaque arrêt — améliore la confidentialité et évite que des données sensibles restent sur le disque.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management" /v "ClearPageFileAtShutdown" /t REG_DWORD /d 1 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "disable-prefetcher",
+    name: "Désactiver Prefetcher Disque",
+    description: "Désactive le mécanisme de prélecture automatique Windows (EnablePrefetcher=0) — sur SSD/NVMe, le prefetcher est redondant car les temps d'accès sont déjà quasi-nuls.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters" /v "EnablePrefetcher" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "disable-ram-diagnostics",
+    name: "Désactiver Tâches Diagnostics RAM",
+    description: "Désactive les tâches planifiées de diagnostic mémoire Windows (MemoryDiagnostic) qui s'exécutent au démarrage — libère des ressources CPU au boot.",
+    category: "premium",
+    commands: [
+      'schtasks /Change /TN "\\Microsoft\\Windows\\MemoryDiagnostic\\RunFullMemoryDiagnostic" /Disable',
+      'schtasks /Change /TN "\\Microsoft\\Windows\\MemoryDiagnostic\\ProcessMemoryDiagnosticEvents" /Disable',
+    ],
+  },
+  {
+    id: "restore-sysmain",
+    name: "Vérifier et Réactiver SysMain",
+    description: "Vérifie si SysMain (SuperFetch) a été désactivé par un outil tiers et le remet en automatique si nécessaire. SysMain est bénéfique sur 32 Go de RAM — recommandé de le garder actif.",
+    category: "premium",
+    powershellCommands: [
+      "$svc = Get-Service -Name 'SysMain' -ErrorAction SilentlyContinue; if ($svc -and $svc.StartType -eq 'Disabled') { Set-Service 'SysMain' -StartupType Automatic; Start-Service 'SysMain' -ErrorAction SilentlyContinue; Write-Host 'SysMain reactivé' } else { Write-Host 'SysMain deja actif' }",
+    ],
+    commands: [],
+  },
+  {
+    id: "disable-page-combining",
+    name: "Désactiver Page Combining",
+    description: "Désactive la fusion de pages mémoire identiques (DisablePageCombining=1) — libère du CPU en éliminant le scan permanent de pages RAM dupliquées. Recommandé sur les configs avec 16 Go ou plus.",
+    category: "premium",
+    warning: "Non recommandé si vous avez moins de 16 Go de RAM — le Page Combining permet d'économiser de la RAM sur les petites configurations. Sur 32 Go (hardware cible), le gain CPU est plus pertinent que l'économie mémoire.",
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management" /v "DisablePageCombining" /t REG_DWORD /d 1 /f',
+    ],
+    commands: [],
+  },
+  // ── PÉRIPHÉRIQUES (nouveaux) ──────────────────────────────────────────────────
+  {
+    id: "disable-mouse-acceleration",
+    name: "Désactiver Accélération Souris",
+    description: "Désactive l'Enhanced Pointer Precision Windows (MouseSpeed=0) pour un mouvement de souris linéaire et prévisible — indispensable pour la précision en jeu FPS.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Control Panel\\Mouse" /v "MouseSpeed" /t REG_SZ /d "0" /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "disable-sticky-keys",
+    name: "Désactiver Sticky Keys (raccourci Shift×5)",
+    description: "Désactive le raccourci Sticky Keys qui se déclenche en appuyant 5 fois sur Shift — évite les interruptions accidentelles en jeu.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Control Panel\\Accessibility\\StickyKeys" /v "Flags" /t REG_SZ /d "506" /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "disable-toggle-keys",
+    name: "Désactiver Toggle Keys (raccourci Verr. Num)",
+    description: "Désactive le raccourci Toggle Keys (maintien touche Verr. Num) qui peut déclencher un bip sonore inattendu en jeu.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Control Panel\\Accessibility\\ToggleKeys" /v "Flags" /t REG_SZ /d "58" /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "enable-pixel-mouse",
+    name: "Mouvement Souris 1:1 Pixel (Courbe Plate)",
+    description: "Remet la courbe d'accélération souris à plat complète (MouseSpeed=0, Threshold1=0, Threshold2=0) — chaque pixel de mouvement physique correspond exactement à un pixel à l'écran.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Control Panel\\Mouse" /v "MouseSpeed" /t REG_SZ /d "0" /f',
+      'reg add "HKCU\\Control Panel\\Mouse" /v "MouseThreshold1" /t REG_SZ /d "0" /f',
+      'reg add "HKCU\\Control Panel\\Mouse" /v "MouseThreshold2" /t REG_SZ /d "0" /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "keyboard-repeat-delay",
+    name: "Réduire Délai de Répétition Clavier",
+    description: "Réduit le délai avant répétition automatique des touches (KeyboardDelay=0, le plus court) et maximise la vitesse de répétition (KeyboardSpeed=31) — améliore la réactivité des saisies rapides.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Control Panel\\Keyboard" /v "KeyboardDelay" /t REG_SZ /d "0" /f',
+      'reg add "HKCU\\Control Panel\\Keyboard" /v "KeyboardSpeed" /t REG_SZ /d "31" /f',
+    ],
+    commands: [],
+  },
+  // ── STOCKAGE (conditionnels — HDD/SSD détectés au runtime) ───────────────────
+  // NOTE: "Disable Write Cache Buffer Flushing" intentionnellement absent —
+  // risque de corruption de données en cas de coupure de courant, inacceptable
+  // pour un produit commercial même avec avertissement.
+  {
+    id: "disable-dipm-hipm",
+    name: "Désactiver DIPM/HIPM et Parking HDD",
+    description: "Désactive la gestion d'alimentation des liens SATA (HIPM/DIPM=0) et empêche le HDD de s'éteindre — élimine les latences de head parking et de réveil disque dur.",
+    category: "premium",
+    commands: [
+      "powercfg -setacvalueindex SCHEME_CURRENT 0012ee47-9041-4b5d-9b77-535fba8b1442 dab60367-53fe-4fbc-825e-521d069d2456 0",
+      "powercfg -setdcvalueindex SCHEME_CURRENT 0012ee47-9041-4b5d-9b77-535fba8b1442 dab60367-53fe-4fbc-825e-521d069d2456 0",
+      "powercfg -setacvalueindex SCHEME_CURRENT 0012ee47-9041-4b5d-9b77-535fba8b1442 6738e2c4-e8a5-4a42-b16a-e040e769756e 0",
+      "powercfg -setdcvalueindex SCHEME_CURRENT 0012ee47-9041-4b5d-9b77-535fba8b1442 6738e2c4-e8a5-4a42-b16a-e040e769756e 0",
+      "powercfg -setactive SCHEME_CURRENT",
+    ],
+  },
+  {
+    id: "disable-ssd-powersave",
+    name: "Désactiver Économie d'Énergie SSD",
+    description: "Empêche le SSD d'entrer en mode basse consommation en désactivant le timer d'extinction disque (jamais = 0) — élimine les latences de réveil SSD lors des accès.",
+    category: "premium",
+    commands: [
+      "powercfg -setacvalueindex SCHEME_CURRENT 0012ee47-9041-4b5d-9b77-535fba8b1442 6738e2c4-e8a5-4a42-b16a-e040e769756e 0",
+      "powercfg -setdcvalueindex SCHEME_CURRENT 0012ee47-9041-4b5d-9b77-535fba8b1442 6738e2c4-e8a5-4a42-b16a-e040e769756e 0",
+      "powercfg -setactive SCHEME_CURRENT",
+    ],
+  },
+  {
+    id: "optimise-ssd-sleep",
+    name: "Optimiser Veille SSD (AHCI Link Power)",
+    description: "Désactive le Link Power Management SATA/AHCI (HIPM/DIPM=0) pour maintenir le SSD en état actif permanent — réduit les micro-latences liées aux transitions d'état de lien SATA.",
+    category: "premium",
+    commands: [
+      "powercfg -setacvalueindex SCHEME_CURRENT 0012ee47-9041-4b5d-9b77-535fba8b1442 dab60367-53fe-4fbc-825e-521d069d2456 0",
+      "powercfg -setdcvalueindex SCHEME_CURRENT 0012ee47-9041-4b5d-9b77-535fba8b1442 dab60367-53fe-4fbc-825e-521d069d2456 0",
+      "powercfg -setactive SCHEME_CURRENT",
+    ],
+  },
+  // ── PRIVACY — Confidentialité & Télémétrie ────────────────────────────────────
+  {
+    id: "privacy-activity-feed",
+    name: "Désactiver Activity Feed",
+    description: "Désactive l'Historique d'activité Windows (EnableActivityFeed=0) qui collecte et synchronise vos activités avec le cloud Microsoft.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Policies\\Microsoft\\Windows\\System" /v "EnableActivityFeed" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Policies\\Microsoft\\Windows\\System" /v "PublishUserActivities" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "privacy-all-ads",
+    name: "Désactiver Publicités et Suggestions",
+    description: "Supprime les publicités sur l'écran de verrouillage, les suggestions d'apps et les contenus sponsorisés dans le menu Démarrer et les notifications Windows.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager" /v "EnableThirdPartySuggestions" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager" /v "SilentInstalledAppsEnabled" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager" /v "OemPreInstalledAppsEnabled" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager" /v "PreInstalledAppsEnabled" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager" /v "ContentDeliveryAllowed" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager" /v "SubscribedContent-338388Enabled" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager" /v "SubscribedContent-338389Enabled" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager" /v "SubscribedContent-353694Enabled" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager" /v "SubscribedContent-353696Enabled" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "privacy-ceip",
+    name: "Désactiver CEIP (Customer Experience Program)",
+    description: "Désactive le programme d'amélioration de Windows qui envoie anonymement des données d'utilisation à Microsoft (CEIPEnable=0).",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKLM\\Software\\Microsoft\\SQMClient\\Windows" /v "CEIPEnable" /t REG_DWORD /d 0 /f',
+      'reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\SQMClient" /v "CEIPEnable" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "privacy-diagnostic-data",
+    name: "Bloquer Collecte Données Diagnostics",
+    description: "Force le niveau de télémétrie Windows au minimum (AllowTelemetry=0) — bloque l'envoi des données de diagnostic détaillées à Microsoft.",
+    category: "premium",
+    warning: "Sur Windows 10 Home, le niveau 0 est remplacé par le niveau 1 (Sécurité) par Windows Update — cela limite les données mais ne les supprime pas totalement.",
+    registryCommands: [
+      'reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection" /v "AllowTelemetry" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "privacy-diagnostic-tracking",
+    name: "Arrêter Service DiagTrack (Télémétrie)",
+    description: "Met le service Connected User Experiences and Telemetry (DiagTrack) en démarrage manuel — bloque la collecte continue de données de diagnostic en arrière-plan.",
+    category: "premium",
+    warning: "Peut empêcher certaines fonctions Windows Update et les rapports de crash automatiques. Réactivez si vous rencontrez des problèmes de mise à jour.",
+    serviceCommands: [
+      "sc stop DiagTrack",
+      "sc config DiagTrack start=demand",
+    ],
+    commands: [],
+  },
+  {
+    id: "privacy-compatibility-telemetry",
+    name: "Désactiver Télémétrie Compatibilité Windows",
+    description: "Désactive la tâche planifiée Microsoft Compatibility Appraiser qui analyse votre configuration pour les mises à niveau Windows et envoie des données à Microsoft.",
+    category: "premium",
+    warning: "Peut réduire la précision des notifications de compatibilité de mise à niveau Windows. Réactivez avant une mise à niveau majeure de Windows.",
+    commands: [
+      'schtasks /Change /TN "\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser" /Disable',
+      'schtasks /Change /TN "\\Microsoft\\Windows\\Application Experience\\AitAgent" /Disable',
+    ],
+  },
+  {
+    id: "privacy-error-reporting",
+    name: "Désactiver Rapport d'Erreurs Windows",
+    description: "Désactive le service Windows Error Reporting (WerSvc) en démarrage manuel et bloque l'envoi automatique des rapports de crash à Microsoft.",
+    category: "premium",
+    serviceCommands: [
+      "sc stop WerSvc",
+      "sc config WerSvc start=demand",
+    ],
+    registryCommands: [
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting" /v "Disabled" /t REG_DWORD /d 1 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "privacy-feedback-hub",
+    name: "Désactiver Demandes Feedback Hub",
+    description: "Supprime les popups de demande de retour d'expérience Windows (Hub de commentaires) en limitant le nombre de demandes de feedback à zéro.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Siuf\\Rules" /v "NumberOfSIUFInPeriod" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Siuf\\Rules" /v "PeriodInNanoSeconds" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "privacy-help-experience",
+    name: "Désactiver Collecte Données Support Microsoft",
+    description: "Désactive les tâches et clés de registre du programme d'amélioration de l'aide Windows qui collectent des données anonymes sur l'utilisation du support.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\SQMClient" /v "CEIPEnable" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "privacy-inventory-collector",
+    name: "Désactiver Inventory Collector",
+    description: "Désactive la tâche ProgramDataUpdater qui collecte des informations sur les programmes installés pour les envoyer à Microsoft à des fins statistiques.",
+    category: "premium",
+    commands: [
+      'schtasks /Change /TN "\\Microsoft\\Windows\\Application Experience\\ProgramDataUpdater" /Disable',
+    ],
+  },
+  {
+    id: "privacy-location-tracking",
+    name: "Désactiver Service de Localisation",
+    description: "Met le service de géolocalisation Windows (lfsvc) en démarrage manuel et bloque le tracking GPS/réseau en arrière-plan.",
+    category: "premium",
+    warning: "Désactive la localisation pour toutes les apps Windows y compris les apps de carte et météo. Réactivez si vous utilisez ces services.",
+    serviceCommands: [
+      "sc stop lfsvc",
+      "sc config lfsvc start=demand",
+    ],
+    registryCommands: [
+      'reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\LocationAndSensors" /v "DisableLocation" /t REG_DWORD /d 1 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "privacy-remote-assistance",
+    name: "Désactiver Assistance à Distance",
+    description: "Désactive la fonctionnalité Assistance à distance Windows (fAllowToGetHelp=0) — empêche toute connexion entrante de support à distance via les outils Windows intégrés.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Remote Assistance" /v "fAllowToGetHelp" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "privacy-timeline-tracking",
+    name: "Désactiver Timeline et Historique Activité",
+    description: "Désactive la Timeline Windows (Chronologie) qui conserve et synchronise l'historique de toutes vos activités — navigation, documents, apps utilisées.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ActivityHistory" /v "PublishUserActivities" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ActivityHistory" /v "UploadUserActivities" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "privacy-advertising-id",
+    name: "Désactiver Identifiant Publicitaire Unique",
+    description: "Désactive l'identifiant publicitaire unique Windows (AdvertisingInfo) qui permet aux apps de vous cibler avec des publicités personnalisées.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo" /v "Enabled" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  // ── QOL — Qualité de vie ──────────────────────────────────────────────────────
+  {
+    id: "qol-control-panel-shortcut",
+    name: "Raccourci Panneau de Configuration (Bureau)",
+    description: "Crée un raccourci vers le Panneau de configuration classique sur le Bureau — accès rapide sans passer par l'application Paramètres Windows 10/11.",
+    category: "premium",
+    powershellCommands: [
+      '$shell = New-Object -ComObject WScript.Shell; $shortcut = $shell.CreateShortcut([Environment]::GetFolderPath("Desktop") + "\\Panneau de configuration.lnk"); $shortcut.TargetPath = "control.exe"; $shortcut.IconLocation = "control.exe,0"; $shortcut.Save()',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-classic-altf4",
+    name: "Menu Alt+F4 Arrêt Classique",
+    description: "S'assure que la boîte de dialogue d'arrêt classique (Alt+F4 sur le Bureau) est disponible avec toutes ses options — Arrêter, Redémarrer, Veille, Déconnexion.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer" /v "NoClose" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer" /v "NoLogoff" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-classic-tray-icons",
+    name: "Icônes Batterie/Réseau Toujours Visibles",
+    description: "Force l'affichage permanent des icônes système dans la barre des tâches (batterie, réseau, volume, santé) sans les cacher dans le menu de débordement.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer" /v "HideSCABattery" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer" /v "HideSCANetwork" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer" /v "HideSCAVolume" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer" /v "HideSCAHealth" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-classic-rightclick",
+    name: "Menu Contextuel Classique (Win11 uniquement)",
+    description: "Restaure le menu clic-droit classique de Windows 10 sur Windows 11 — affiche directement toutes les options sans passer par 'Afficher plus d'options'.",
+    category: "premium",
+    warning: "Windows 11 uniquement. Modifie le comportement du Shell Explorer. Un redémarrage ou un taskkill /f /im explorer.exe peut être nécessaire pour appliquer le changement.",
+    win11Only: true,
+    registryCommands: [
+      'reg add "HKCU\\Software\\Classes\\CLSID\\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\\InprocServer32" /ve /t REG_SZ /d "" /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-disable-suggested-apps",
+    name: "Désactiver Apps Suggérées et Promo",
+    description: "Désactive l'installation silencieuse automatique d'apps suggérées/sponsorisées et les suggestions d'apps dans le menu Démarrer.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager" /v "SilentInstalledAppsEnabled" /t REG_DWORD /d 0 /f',
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager" /v "EnableThirdPartySuggestions" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-disable-snap-layouts",
+    name: "Désactiver Snap Layouts au Survol",
+    description: "Désactive l'aperçu des Snap Layouts qui apparaît au survol du bouton Agrandir — évite les popups intempestifs lors des alt-tab en jeu.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced" /v "EnableSnapAssistFlyout" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-disable-start-suggestions",
+    name: "Désactiver Suggestions Menu Démarrer",
+    description: "Supprime les apps et contenus suggérés dans le Menu Démarrer (SystemPaneSuggestionsEnabled=0) — affiche uniquement vos apps épinglées et installées.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager" /v "SystemPaneSuggestionsEnabled" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-disable-taskbar-chat",
+    name: "Supprimer Icône Teams Chat (Win11 uniquement)",
+    description: "Supprime l'icône Microsoft Teams Chat de la barre des tâches Windows 11 (TaskbarMn=0) — libère de l'espace et évite les popups Teams inopinés.",
+    category: "premium",
+    win11Only: true,
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced" /v "TaskbarMn" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-disable-taskbar-transparency",
+    name: "Désactiver Transparence Barre des Tâches",
+    description: "Désactive l'effet de transparence de la barre des tâches Windows (EnableTransparency=0) — réduit légèrement la charge GPU de composition de l'interface.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize" /v "EnableTransparency" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-disable-widgets",
+    name: "Supprimer Widgets Windows (Win11 uniquement)",
+    description: "Supprime le bouton Widgets de la barre des tâches Windows 11 (TaskbarDa=0) et désactive le service Widgets qui se connecte aux actualités/météo en arrière-plan.",
+    category: "premium",
+    warning: "Windows 11 uniquement. Sur certaines versions, la suppression des Widgets peut nécessiter un redémarrage de l'explorateur pour prendre effet.",
+    win11Only: true,
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced" /v "TaskbarDa" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-disable-windows-tips",
+    name: "Désactiver Conseils et Astuces Windows",
+    description: "Désactive les notifications de conseils, astuces et suggestions Windows (SoftLandingEnabled=0) — supprime les popups de tutoriels d'interface.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager" /v "SoftLandingEnabled" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-full-wallpaper-quality",
+    name: "Fond d'Écran en Qualité Maximale",
+    description: "Force Windows à afficher le fond d'écran en qualité JPEG maximale (JPEGImportQuality=100) au lieu de recompresser l'image lors de l'importation.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Control Panel\\Desktop" /v "JPEGImportQuality" /t REG_DWORD /d 100 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-numlock-startup",
+    name: "Activer Verr. Num au Démarrage",
+    description: "Active automatiquement la touche Verrou numérique (Num Lock) à chaque démarrage de Windows — évite de devoir l'activer manuellement à chaque session.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Control Panel\\Keyboard" /v "InitialKeyboardIndicators" /t REG_SZ /d "2" /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-remove-suggested-actions",
+    name: "Désactiver Actions Suggérées (Clipboard)",
+    description: "Désactive les suggestions contextuelles automatiques de Windows (numéros de téléphone, dates copiées) qui proposent d'ouvrir des apps après une copie dans le presse-papiers.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\SmartActionPlatform\\SmartClipboard" /v "Disabled" /t REG_DWORD /d 1 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-show-file-extensions",
+    name: "Afficher Extensions de Fichiers",
+    description: "Affiche les extensions de fichiers dans l'Explorateur (HideFileExt=0) — indispensable pour distinguer les vrais fichiers des fichiers malveillants renommés.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced" /v "HideFileExt" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "qol-show-hidden-files",
+    name: "Afficher Fichiers et Dossiers Cachés",
+    description: "Affiche les fichiers et dossiers cachés dans l'Explorateur Windows (Hidden=1) — permet de voir les fichiers système et de configuration habituellement masqués.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced" /v "Hidden" /t REG_DWORD /d 1 /f',
+    ],
+    commands: [],
   },
 ];
 

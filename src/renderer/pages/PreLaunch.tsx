@@ -242,7 +242,7 @@ export default function PreLaunch({ isPremium, openLicenseModal }: Props) {
           "Stoppe WdNisSvc (Defender scan)",
           "Flush DNS",
           "Lance Fortnite via Epic Games Launcher",
-          "Applique affinite CPU (cores 0-5) + priorite HIGH apres 35s",
+          "Applique affinite CPU (cores 0-5) apres 35s",
           autoRestore ? "Restaure les processus apres fermeture de Fortnite" : "Restauration desactivee",
         ].map((step, i) => (
           <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginBottom: "6px" }}>
