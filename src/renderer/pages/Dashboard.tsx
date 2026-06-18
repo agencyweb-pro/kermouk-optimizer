@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { FREE_TWEAKS, PREMIUM_TWEAKS, generateBatScript } from "../utils/tweakEngine";
+import { getActiveTweaksCount } from "../utils/tweakStore";
 
 interface DashboardProps {
   isPremium: boolean;
@@ -27,7 +28,7 @@ const FORTNITE_EU_SERVER = "13.248.195.0";
 const ALL_FREE = FREE_TWEAKS;
 const ALL_TWEAKS = [...FREE_TWEAKS, ...PREMIUM_TWEAKS];
 
-type UpdateStatus = "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "error";
+type UpdateStatus = "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "error" | "no-server";
 
 export default function Dashboard({ isPremium, openLicenseModal }: DashboardProps) {
   const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null);
@@ -35,15 +36,36 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
   const [hw, setHw] = useState<HardwareMonitor | null>(null);
   const [ping, setPing] = useState<number>(-1);
   const [pingLoading, setPingLoading] = useState(true);
-  const [modeApplying, setModeApplying] = useState<"gaming" | "tournoi" | "streaming" | null>(null);
+  const [modeApplying, setModeApplying] = useState<"gaming" | "tournoi" | "streaming" | "pack" | null>(null);
   const [modeDone, setModeDone] = useState<string>("");
-  const tweaksCount = parseInt(localStorage.getItem("kermouk_tweaks_count") || "0");
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportContent, setReportContent] = useState<string | null>(null);
+  const [reportFolder, setReportFolder] = useState("");
+  const tweaksCount = getActiveTweaksCount();
+
+  // Quickstart checklist states (basés sur localStorage)
+  const backupsCount = (() => {
+    try { return parseInt(localStorage.getItem("kermouk_backups_count") || "0"); } catch { return 0; }
+  })();
+  const cleanHistory = (() => {
+    try { return JSON.parse(localStorage.getItem("kermouk_clean_history") || "[]"); } catch { return []; }
+  })();
+  const fortniteOptimized = (() => {
+    try { return localStorage.getItem("kermouk_fortnite_applied") === "1"; } catch { return false; }
+  })();
+  const quickstepItems = [
+    { label: "Créer un backup système", done: backupsCount > 0 },
+    { label: "Activer les tweaks Windows", done: tweaksCount > 0 },
+    { label: "Nettoyer les fichiers temporaires", done: cleanHistory.length > 0 },
+    { label: "Optimiser les settings Fortnite", done: fortniteOptimized },
+  ];
+  const quickstepDone = quickstepItems.filter(i => i.done).length;
 
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
   const [updateVersion, setUpdateVersion] = useState<string>("");
   const [updatePercent, setUpdatePercent] = useState<number>(0);
   const [updateError, setUpdateError] = useState<string>("");
-  const currentVersion = "2.3.1";
+  const currentVersion = "2.5.0";
 
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hwIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -148,7 +170,13 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
     setModeApplying(null);
   };
 
+  const DOWNLOAD_URL = "https://kermouk.com/download";
+
   const handleCheckUpdate = async () => {
+    if (updateStatus === "no-server") {
+      window.kermouk?.openExternal?.(DOWNLOAD_URL);
+      return;
+    }
     setUpdateStatus("checking");
     setUpdateError("");
     await window.kermouk?.checkForUpdates?.();
@@ -156,6 +184,33 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
 
   const handleInstallUpdate = () => {
     window.kermouk?.installUpdate?.();
+  };
+
+  const handlePackComplet = async () => {
+    if (modeApplying) return;
+    setModeApplying("pack");
+    setModeDone("");
+    await window.kermouk.createRestorePoint();
+    const result = await window.kermouk.applyPackComplet();
+    if (result.ok) {
+      setModeDone("✓ Pack Complet Fortnite appliqué — 10 étapes optimisées. Redémarrez Windows !");
+    } else {
+      setModeDone("✗ Erreur Pack Complet — vérifiez l'élévation UAC.");
+    }
+    setModeApplying(null);
+  };
+
+  const handleGenerateReport = async () => {
+    setReportLoading(true);
+    setReportContent(null);
+    const result = await window.kermouk.generateSystemReport();
+    setReportLoading(false);
+    if (result.ok) {
+      setReportContent(result.content);
+      setReportFolder(result.reportPath);
+    } else {
+      setReportContent(`Erreur : ${result.error || "Impossible de générer le rapport."}`);
+    }
   };
 
   const handleModeStreaming = async () => {
@@ -237,6 +292,60 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
         </div>
       </div>
 
+      {/* ── Cartes de statut rapide ─────────────────────────────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", marginBottom: "16px" }}>
+        {/* Carte Backup */}
+        <div className="card" style={{ textAlign: "center", padding: "14px" }}>
+          <div style={{ fontSize: "9px", color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px" }}>Sauvegardes</div>
+          <div style={{ fontFamily: "Orbitron, sans-serif", fontSize: "28px", fontWeight: 900, color: backupsCount > 0 ? "#22c55e" : "#333", lineHeight: 1 }}>
+            {backupsCount}
+          </div>
+          <div style={{ fontSize: "10px", color: "#444", marginTop: "4px" }}>
+            {backupsCount > 0 ? "disponible(s)" : "aucune sauvegarde"}
+          </div>
+        </div>
+
+        {/* Carte Kermouk Fortnite Mode */}
+        <div className="card" style={{ textAlign: "center", padding: "14px", background: tweaksCount > 0 ? "rgba(255,107,0,0.04)" : undefined, border: tweaksCount > 0 ? "1px solid var(--primary-border)" : undefined }}>
+          <div style={{ fontSize: "9px", color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "6px" }}>Kermouk Mode</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+            <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: tweaksCount > 0 ? "var(--primary)" : "#222", flexShrink: 0 }} />
+            <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 900, fontSize: "14px", color: tweaksCount > 0 ? "var(--primary)" : "#333" }}>
+              {tweaksCount > 0 ? "ACTIF" : "INACTIF"}
+            </span>
+          </div>
+          <div style={{ fontSize: "10px", color: "#444", marginTop: "4px" }}>
+            {tweaksCount > 0 ? `${tweaksCount} tweaks appliqués` : "Aucun tweak actif"}
+          </div>
+        </div>
+
+        {/* Carte Quickstart progress */}
+        <div className="card" style={{ padding: "14px" }}>
+          <div style={{ fontSize: "9px", color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "8px" }}>
+            Quickstart {quickstepDone}/{quickstepItems.length}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+            {quickstepItems.map((step, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <div style={{
+                  width: "12px", height: "12px", borderRadius: "3px", flexShrink: 0,
+                  background: step.done ? "var(--primary)" : "#111",
+                  border: step.done ? "none" : "1px solid #2a2a2a",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {step.done && (
+                    <svg width="8" height="8" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                  )}
+                </div>
+                <span style={{ fontSize: "9px", color: step.done ? "#ccc" : "#333", lineHeight: 1.2 }}>{step.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Anti-cheat badges */}
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "14px" }}>
         {[
@@ -251,7 +360,7 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
       </div>
 
       {/* Quick mode buttons */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", marginBottom: "16px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "10px", marginBottom: "16px" }}>
         <button
           onClick={handleModeGaming}
           disabled={modeApplying !== null}
@@ -302,6 +411,26 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
             {isPremium ? "OBS + Fortnite" : "Premium requis"}
           </div>
         </button>
+
+        <button
+          onClick={handlePackComplet}
+          disabled={modeApplying !== null}
+          style={{
+            padding: "14px", borderRadius: "8px",
+            cursor: modeApplying ? "default" : "pointer",
+            background: "linear-gradient(135deg, #92400e, #b45309)",
+            color: "white", fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
+            textAlign: "center", transition: "all 0.2s", opacity: modeApplying ? 0.6 : 1,
+            border: "1px solid rgba(251,191,36,0.3)",
+          }}
+        >
+          <div style={{ fontSize: "13px", fontWeight: 900, letterSpacing: "0.05em" }}>
+            {modeApplying === "pack" ? "Application..." : "PACK COMPLET"}
+          </div>
+          <div style={{ fontSize: "10px", opacity: 0.75, marginTop: "3px" }}>
+            10 étapes • Services+Réseau+Reg
+          </div>
+        </button>
       </div>
 
       {modeDone && (
@@ -323,7 +452,7 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
           <div style={{ fontFamily: "Orbitron, sans-serif", fontSize: "24px", fontWeight: 900, color: "var(--primary)" }}>
             {tweaksCount}
           </div>
-          <div style={{ fontSize: "9px", color: "#333", marginTop: "2px" }}>session totale</div>
+          <div style={{ fontSize: "9px", color: "#333", marginTop: "2px" }}>actifs</div>
         </div>
         <div className="stat-chip">
           <div style={{ fontSize: "9px", color: "#555", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "4px" }}>Ping Fortnite EU</div>
@@ -479,6 +608,42 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
         onDismiss={() => setUpdateStatus("idle")}
       />
 
+      {/* Rapport système */}
+      <div className="card" style={{ marginTop: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: reportContent ? "12px" : 0 }}>
+          <div style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px", textTransform: "uppercase", letterSpacing: "0.08em", color: "#666" }}>
+            Rapport Système
+          </div>
+          <div style={{ display: "flex", gap: "8px" }}>
+            {reportFolder && (
+              <button
+                onClick={() => window.kermouk.openExternal(reportFolder)}
+                style={{ padding: "4px 12px", borderRadius: "6px", fontSize: "10px", background: "transparent", border: "1px solid #1e1e1e", color: "#555", cursor: "pointer", fontFamily: "Rajdhani, sans-serif", fontWeight: 700 }}
+              >
+                Ouvrir dossier
+              </button>
+            )}
+            <button
+              onClick={handleGenerateReport}
+              disabled={reportLoading}
+              style={{ padding: "4px 12px", borderRadius: "6px", fontSize: "10px", background: "transparent", border: "1px solid #1e1e1e", color: reportLoading ? "#333" : "#555", cursor: reportLoading ? "default" : "pointer", fontFamily: "Rajdhani, sans-serif", fontWeight: 700 }}
+            >
+              {reportLoading ? "Génération..." : "Générer rapport"}
+            </button>
+          </div>
+        </div>
+        {reportContent && (
+          <pre style={{ fontSize: "9px", color: "#444", lineHeight: 1.6, fontFamily: "monospace", maxHeight: "200px", overflowY: "auto", background: "#080808", border: "1px solid #111", borderRadius: "6px", padding: "10px", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+            {reportContent}
+          </pre>
+        )}
+        {reportFolder && (
+          <div style={{ fontSize: "10px", color: "#333", marginTop: "8px" }}>
+            RESTAURER_TWEAKS.bat généré dans le même dossier.
+          </div>
+        )}
+      </div>
+
       {/* Quick tips */}
       <div className="card" style={{ marginTop: "12px" }}>
         <div style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px", textTransform: "uppercase", letterSpacing: "0.08em", color: "#666", marginBottom: "12px" }}>
@@ -517,43 +682,44 @@ interface UpdateCardProps {
   onDismiss: () => void;
 }
 
-function UpdateCard({ status, version, percent, errorMsg, currentVersion, onCheck, onInstall, onDismiss }: UpdateCardProps) {
+function UpdateCard({ status, version, percent, currentVersion, onCheck, onInstall, onDismiss }: UpdateCardProps) {
   const isUpToDate = status === "up-to-date";
   const isAvailable = status === "available";
   const isDownloading = status === "downloading";
   const isDownloaded = status === "downloaded";
-  const isError = status === "error";
+  const isNoServer = status === "error" || status === "no-server";
   const isChecking = status === "checking";
 
   const badgeColor = isUpToDate ? "#22c55e"
     : isAvailable || isDownloading || isDownloaded ? "#f59e0b"
-    : isError ? "#ef4444"
-    : "#555";
+    : "#444";
 
   const badgeBg = isUpToDate ? "rgba(34,197,94,0.08)"
     : isAvailable || isDownloading || isDownloaded ? "rgba(245,158,11,0.08)"
-    : isError ? "rgba(239,68,68,0.08)"
-    : "rgba(80,80,80,0.08)";
+    : "rgba(40,40,40,0.4)";
 
   const badgeBorder = isUpToDate ? "rgba(34,197,94,0.2)"
     : isAvailable || isDownloading || isDownloaded ? "rgba(245,158,11,0.2)"
-    : isError ? "rgba(239,68,68,0.2)"
-    : "#1e1e1e";
+    : "#1a1a1a";
 
-  const badgeLabel = isUpToDate ? `✓ Dernière version — v${currentVersion}`
-    : isAvailable ? `⚠ Mise à jour disponible — v${version}`
-    : isDownloading ? `↓ Téléchargement... ${percent}%`
-    : isDownloaded ? `✓ Prête à installer — v${version}`
-    : isError ? "✗ Erreur de mise à jour"
-    : isChecking ? "Vérification en cours..."
-    : `Version actuelle — v${currentVersion}`;
+  const badgeLabel = isUpToDate ? `✓ Derniere version — v${currentVersion}`
+    : isAvailable ? `Mise a jour disponible — v${version}`
+    : isDownloading ? `Telechargement... ${percent}%`
+    : isDownloaded ? `Prete a installer — v${version}`
+    : isNoServer ? `v${currentVersion} — verif. desactivee`
+    : isChecking ? "Verification en cours..."
+    : `v${currentVersion}`;
+
+  const btnLabel = isChecking ? "Verification..."
+    : isNoServer ? "Telecharger"
+    : "Verifier";
 
   return (
     <div className="card" style={{ marginTop: "12px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: isDownloading || isDownloaded || isError ? "12px" : "0" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: isDownloading || isDownloaded ? "12px" : "0" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <div style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.1em", color: "#555" }}>
-            Mise à jour
+            Mise a jour
           </div>
           <div style={{
             padding: "3px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 700,
@@ -568,13 +734,14 @@ function UpdateCard({ status, version, percent, errorMsg, currentVersion, onChec
           disabled={isChecking || isDownloading}
           style={{
             padding: "4px 12px", borderRadius: "6px", fontSize: "10px",
-            background: "transparent", border: "1px solid #1e1e1e", color: "#555",
+            background: "transparent", border: "1px solid #1e1e1e",
+            color: isNoServer ? "var(--primary)" : "#555",
             cursor: isChecking || isDownloading ? "default" : "pointer",
             fontFamily: "Rajdhani, sans-serif", fontWeight: 700, letterSpacing: "0.06em",
             opacity: isChecking || isDownloading ? 0.4 : 1,
           }}
         >
-          {isChecking ? "Vérification..." : "Vérifier"}
+          {btnLabel}
         </button>
       </div>
 
@@ -592,21 +759,14 @@ function UpdateCard({ status, version, percent, errorMsg, currentVersion, onChec
       {isDownloaded && (
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           <div style={{ flex: 1, fontSize: "11px", color: "#f59e0b" }}>
-            v{version} téléchargée — redémarrer pour appliquer
+            v{version} telechargee — redemarrer pour appliquer
           </div>
           <button onClick={onInstall} className="btn-primary" style={{ padding: "6px 14px", fontSize: "11px", whiteSpace: "nowrap" }}>
-            Redémarrer et mettre à jour
+            Redemarrer et mettre a jour
           </button>
           <button onClick={onDismiss} style={{ padding: "5px 10px", background: "none", border: "1px solid #1e1e1e", borderRadius: "6px", color: "#555", fontSize: "11px", cursor: "pointer" }}>
             Plus tard
           </button>
-        </div>
-      )}
-
-      {/* Error */}
-      {isError && (
-        <div style={{ fontSize: "11px", color: "#ef4444" }}>
-          {errorMsg || "Impossible de vérifier les mises à jour. Vérifiez votre connexion internet."}
         </div>
       )}
     </div>

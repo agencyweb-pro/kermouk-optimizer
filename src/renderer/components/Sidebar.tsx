@@ -5,30 +5,57 @@ interface SidebarProps {
   isPremium: boolean;
   onNavigate: (page: Page) => void;
   onUnlockPremium: () => void;
+  supabaseUser: { id: string; email: string } | null;
 }
 
-const navItems: {
+interface NavItem {
   id: Page;
   label: string;
   icon: React.ReactNode;
   premiumRequired?: boolean;
   isNew?: boolean;
-}[] = [
+  highlight?: boolean;
+}
+
+// ── GROUPE "Général" ──────────────────────────────────────────────────────────
+const GENERAL_ITEMS: NavItem[] = [
   {
-    id: "dashboard",
-    label: "Tableau de bord",
+    id: "home",
+    label: "Home",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="3" width="7" height="7" rx="1" />
-        <rect x="14" y="3" width="7" height="7" rx="1" />
-        <rect x="3" y="14" width="7" height="7" rx="1" />
-        <rect x="14" y="14" width="7" height="7" rx="1" />
+        <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+        <polyline points="9 22 9 12 15 12 15 22" />
       </svg>
     ),
   },
   {
-    id: "system",
-    label: "Tweaks Système",
+    id: "backups",
+    label: "Backups",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+        <polyline points="17 8 12 3 7 8" />
+        <line x1="12" y1="3" x2="12" y2="15" />
+      </svg>
+    ),
+  },
+  {
+    id: "fixes",
+    label: "Fixes",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />
+      </svg>
+    ),
+  },
+];
+
+// ── GROUPE "Principal" ────────────────────────────────────────────────────────
+const PRINCIPAL_ITEMS: NavItem[] = [
+  {
+    id: "general",
+    label: "General",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <circle cx="12" cy="12" r="3" />
@@ -38,19 +65,8 @@ const navItems: {
     isNew: true,
   },
   {
-    id: "network",
-    label: "Tweaks Réseau",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-      </svg>
-    ),
-    premiumRequired: true,
-    isNew: true,
-  },
-  {
-    id: "gpu",
-    label: "Tweaks GPU",
+    id: "hardware",
+    label: "Hardware",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <rect x="2" y="7" width="20" height="14" rx="2" />
@@ -61,106 +77,57 @@ const navItems: {
     isNew: true,
   },
   {
-    id: "fortnite",
-    label: "Tweaks Fortnite",
+    id: "debloat",
+    label: "Debloat",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+        <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
       </svg>
     ),
-    premiumRequired: true,
+    isNew: true,
   },
   {
-    id: "fortnite-advanced",
-    label: "Fortnite Avancé",
+    id: "network",
+    label: "Network",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-        <circle cx="19" cy="5" r="3" />
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
       </svg>
     ),
     premiumRequired: true,
     isNew: true,
   },
   {
-    id: "bios",
-    label: "Guide BIOS",
+    id: "prelaunch",
+    label: "Pre-Launch Fortnite",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="2" y="4" width="20" height="16" rx="2" />
-        <path d="M8 4v16M12 4v16M16 4v16M2 10h20M2 14h20" />
-      </svg>
-    ),
-    premiumRequired: true,
-  },
-  {
-    id: "overclock",
-    label: "Overclocking",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-        <circle cx="18" cy="6" r="3" />
-      </svg>
-    ),
-    premiumRequired: true,
-  },
-  {
-    id: "gpo",
-    label: "GPO & Système",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-        <polyline points="9 12 11 14 15 10" />
+        <polygon points="5 3 19 12 5 21 5 3" />
       </svg>
     ),
     premiumRequired: true,
     isNew: true,
+    highlight: true,
   },
   {
-    id: "inputlag",
-    label: "Input Lag Calc",
+    id: "advanced",
+    label: "Advanced",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-      </svg>
-    ),
-    isNew: true,
-  },
-  {
-    id: "benchmark",
-    label: "Benchmark",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.07 4.93A10 10 0 116.93 19.07" />
+        <path d="M18 2l4 4-4 4" />
       </svg>
     ),
     premiumRequired: true,
-    isNew: true,
   },
-  {
-    id: "gameprofiles",
-    label: "Profils Jeux",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="2" y="6" width="20" height="12" rx="2"/><line x1="12" y1="6" x2="12" y2="18"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="10" x2="16" y2="14"/>
-      </svg>
-    ),
-    premiumRequired: true,
-    isNew: true,
-  },
-  {
-    id: "cleaner",
-    label: "Nettoyeur",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
-      </svg>
-    ),
-    isNew: true,
-  },
+];
+
+// ── GROUPE "Compte" (footer) ──────────────────────────────────────────────────
+const ACCOUNT_ITEMS: NavItem[] = [
   {
     id: "about",
-    label: "À propos",
+    label: "A propos",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <circle cx="12" cy="12" r="10" />
@@ -168,44 +135,94 @@ const navItems: {
       </svg>
     ),
   },
+  {
+    id: "account",
+    label: "Mon Compte",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+    ),
+  },
 ];
 
-export default function Sidebar({ currentPage, isPremium, onNavigate, onUnlockPremium }: SidebarProps) {
+function GroupLabel({ label }: { label: string }) {
+  return (
+    <div style={{ fontSize: "9px", color: "#2a2a2a", letterSpacing: "0.12em", textTransform: "uppercase", padding: "0 12px 6px", fontWeight: 700 }}>
+      {label}
+    </div>
+  );
+}
+
+function Divider() {
+  return <div style={{ height: "1px", background: "#111", margin: "8px 12px" }} />;
+}
+
+function NavItemRow({
+  item, currentPage, isPremium, supabaseUser, onNavigate,
+}: {
+  item: NavItem;
+  currentPage: Page;
+  isPremium: boolean;
+  supabaseUser: { id: string; email: string } | null;
+  onNavigate: (page: Page) => void;
+}) {
+  const locked = item.premiumRequired && !isPremium;
+  return (
+    <div
+      className={`nav-item ${currentPage === item.id ? "active" : ""} ${locked ? "opacity-60" : ""}`}
+      onClick={() => onNavigate(item.id)}
+      title={locked ? "Fonctionnalité Premium" : undefined}
+      style={item.highlight && !locked ? { borderLeft: "2px solid var(--primary)", paddingLeft: "10px" } : undefined}
+    >
+      <span>{item.icon}</span>
+      <span style={{ flex: 1 }}>{item.label}</span>
+
+      {item.isNew && item.id !== "account" && (
+        <span className="badge badge-new">NEW</span>
+      )}
+      {item.id === "account" && supabaseUser && (
+        <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#22c55e", flexShrink: 0 }} />
+      )}
+      {locked && (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2">
+          <rect x="3" y="11" width="18" height="11" rx="2" />
+          <path d="M7 11V7a5 5 0 0110 0v4" />
+        </svg>
+      )}
+      {item.premiumRequired && isPremium && !item.isNew && (
+        <span className="badge badge-premium" style={{ fontSize: "8px" }}>PRO</span>
+      )}
+    </div>
+  );
+}
+
+export default function Sidebar({ currentPage, isPremium, onNavigate, onUnlockPremium, supabaseUser }: SidebarProps) {
   return (
     <aside className="sidebar flex flex-col">
-      {/* Nav items */}
       <div className="flex-1">
-        <div style={{ fontSize: "9px", color: "#333", letterSpacing: "0.12em", textTransform: "uppercase", padding: "0 12px 8px", fontWeight: 700 }}>
-          Navigation
-        </div>
+        {/* Groupe Général */}
+        <GroupLabel label="Général" />
+        {GENERAL_ITEMS.map(item => (
+          <NavItemRow key={item.id} item={item} currentPage={currentPage} isPremium={isPremium} supabaseUser={supabaseUser} onNavigate={onNavigate} />
+        ))}
 
-        {navItems.map((item) => {
-          const locked = item.premiumRequired && !isPremium;
-          return (
-            <div
-              key={item.id}
-              className={`nav-item ${currentPage === item.id ? "active" : ""} ${locked ? "opacity-60" : ""}`}
-              onClick={() => onNavigate(item.id)}
-              title={locked ? "Fonctionnalité Premium" : undefined}
-            >
-              <span>{item.icon}</span>
-              <span style={{ flex: 1 }}>{item.label}</span>
+        <Divider />
 
-              {item.isNew && (
-                <span className="badge badge-new">NEW</span>
-              )}
-              {locked && (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2">
-                  <rect x="3" y="11" width="18" height="11" rx="2" />
-                  <path d="M7 11V7a5 5 0 0110 0v4" />
-                </svg>
-              )}
-              {item.premiumRequired && isPremium && !item.isNew && (
-                <span className="badge badge-premium" style={{ fontSize: "8px" }}>PRO</span>
-              )}
-            </div>
-          );
-        })}
+        {/* Groupe Principal */}
+        <GroupLabel label="Principal" />
+        {PRINCIPAL_ITEMS.map(item => (
+          <NavItemRow key={item.id} item={item} currentPage={currentPage} isPremium={isPremium} supabaseUser={supabaseUser} onNavigate={onNavigate} />
+        ))}
+
+        <Divider />
+
+        {/* Groupe Compte */}
+        <GroupLabel label="Compte" />
+        {ACCOUNT_ITEMS.map(item => (
+          <NavItemRow key={item.id} item={item} currentPage={currentPage} isPremium={isPremium} supabaseUser={supabaseUser} onNavigate={onNavigate} />
+        ))}
       </div>
 
       {/* Premium CTA */}

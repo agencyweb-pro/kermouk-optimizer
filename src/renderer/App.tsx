@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { getActiveTweaksCount } from "./utils/tweakStore";
 import Sidebar from "./components/Sidebar";
 import TitleBar from "./components/TitleBar";
 import LicenseModal from "./components/LicenseModal";
@@ -6,40 +7,47 @@ import SplashScreen from "./components/SplashScreen";
 import StatusBar from "./components/StatusBar";
 import Dashboard from "./pages/Dashboard";
 import NetworkTweaks from "./pages/NetworkTweaks";
-import SystemTweaks from "./pages/SystemTweaks";
-import GpuTweaks from "./pages/GpuTweaks";
-import FortniteTweaks from "./pages/FortniteTweaks";
-import FortniteAdvanced from "./pages/FortniteAdvanced";
-import BiosTweaks from "./pages/BiosTweaks";
-import OverclockTweaks from "./pages/OverclockTweaks";
+import PreLaunch from "./pages/PreLaunch";
 import About from "./pages/About";
-import InputLagCalculator from "./pages/InputLagCalculator";
-import Benchmark from "./pages/Benchmark";
-import GameProfiles from "./pages/GameProfiles";
-import Cleaner from "./pages/Cleaner";
-import GpoTweaks from "./pages/GpoTweaks";
+import AuthPage from "./pages/AuthPage";
+import AccountPage from "./pages/AccountPage";
+import BackupsPage from "./pages/BackupsPage";
+import FixesPage from "./pages/FixesPage";
+import GeneralPage from "./pages/GeneralPage";
+import HardwarePage from "./pages/HardwarePage";
+import DebloatPage from "./pages/DebloatPage";
+import AdvancedPage from "./pages/AdvancedPage";
+
+export interface SupabaseProfile {
+  id: string;
+  email: string;
+  is_premium: boolean;
+  referral_code: string;
+  referred_by: string | null;
+  referral_count: number;
+  created_at: string;
+}
 
 export type Page =
-  | "dashboard"
+  | "home"
+  | "backups"
+  | "fixes"
+  | "general"
+  | "hardware"
+  | "debloat"
   | "network"
-  | "system"
-  | "gpu"
-  | "fortnite"
-  | "fortnite-advanced"
-  | "bios"
-  | "overclock"
-  | "inputlag"
-  | "benchmark"
-  | "gameprofiles"
-  | "cleaner"
-  | "gpo"
-  | "about";
+  | "prelaunch"
+  | "advanced"
+  | "about"
+  | "account";
 
 export interface AppState {
   isPremium: boolean;
   licenseKey: string | null;
   currentPage: Page;
   showLicenseModal: boolean;
+  supabaseUser: { id: string; email: string } | null;
+  supabaseProfile: SupabaseProfile | null;
 }
 
 declare global {
@@ -51,6 +59,7 @@ declare global {
       loadLicense: () => Promise<string | null>;
       saveLicense: (key: string) => Promise<{ ok: boolean; message?: string }>;
       clearLicense: () => Promise<{ ok: boolean }>;
+      activateLicense: (key: string) => Promise<{ ok: boolean; message?: string; profile?: SupabaseProfile; alreadyOwned?: boolean }>;
       getSystemInfo: () => Promise<Record<string, string>>;
       applyTweaks: (bat: string, names: string[]) => Promise<{ ok: boolean; applied?: string[]; message?: string; error?: string }>;
       createRestorePoint: () => Promise<{ ok: boolean; error?: string }>;
@@ -72,11 +81,25 @@ declare global {
       setNotificationsEnabled: (enabled: boolean) => Promise<void>;
       scanGpoStatus: () => Promise<{ gpeditAvailable: boolean; vbsActive: boolean; tweaks: Record<string, string> }>;
       installGpedit: () => Promise<{ ok: boolean; error?: string }>;
+      installGpeditDll: () => Promise<{ ok: boolean; error?: string }>;
       applyGpoTweaks: (ids: string[]) => Promise<{ ok: boolean; error?: string }>;
       restoreGpoDefaults: () => Promise<{ ok: boolean; error?: string }>;
+      detectNvidiaInspector: () => Promise<{ found: boolean; path: string | null }>;
+      applyNvidiaProfile: (profileFilename: string, inspectorPath: string) => Promise<{ ok: boolean; error?: string }>;
+      applyPackComplet: () => Promise<{ ok: boolean; error?: string }>;
+      generateSystemReport: () => Promise<{ ok: boolean; reportPath: string; content: string; error?: string }>;
+      exportPcOptimizations: () => Promise<{ ok: boolean; folder: string; error?: string }>;
+      preLaunchFortnite: (params: { killDiscord: boolean; autoRestore: boolean }) => Promise<{ ok: boolean; freedMb?: number; error?: string }>;
+      onPreLaunchProgress: (cb: (data: { step: string; message: string; done: boolean }) => void) => () => void;
+      onHwAlert: (cb: (data: Record<string, unknown>) => void) => () => void;
       checkForUpdates: () => Promise<void>;
       installUpdate: () => Promise<void>;
       onUpdateStatus: (cb: (payload: Record<string, unknown>) => void) => () => void;
+      authSignup: (params: { email: string; password: string; referralCode?: string }) => Promise<{ ok: boolean; message?: string; user?: { id: string; email: string }; profile?: SupabaseProfile }>;
+      authLogin: (params: { email: string; password: string }) => Promise<{ ok: boolean; message?: string; user?: { id: string; email: string }; profile?: SupabaseProfile }>;
+      authLogout: () => Promise<{ ok: boolean }>;
+      authGetUser: () => Promise<{ user: { id: string; email: string } | null; profile: SupabaseProfile | null }>;
+      authCheckSession: () => Promise<{ ok: boolean; user?: { id: string; email: string } | null; profile?: SupabaseProfile | null }>;
     };
   }
 }
@@ -103,8 +126,10 @@ export default function App() {
   const [state, setState] = useState<AppState>({
     isPremium: false,
     licenseKey: null,
-    currentPage: "dashboard",
+    currentPage: "home",
     showLicenseModal: false,
+    supabaseUser: null,
+    supabaseProfile: null,
   });
 
   // Load license and preferences on mount
@@ -113,12 +138,22 @@ export default function App() {
     setTheme(savedTheme);
     applyTheme(savedTheme);
 
-    const count = parseInt(localStorage.getItem("kermouk_tweaks_count") || "0");
-    setAppliedTweaksCount(count);
+    setAppliedTweaksCount(getActiveTweaksCount());
 
     window.kermouk?.loadLicense().then((key) => {
       if (key) setState((s) => ({ ...s, isPremium: true, licenseKey: key }));
     });
+
+    window.kermouk?.authCheckSession().then((result) => {
+      if (result?.user && result?.profile) {
+        setState((s) => ({
+          ...s,
+          supabaseUser: result.user ?? null,
+          supabaseProfile: result.profile ?? null,
+          isPremium: s.isPremium || !!(result.profile?.is_premium),
+        }));
+      }
+    }).catch(() => { /* silencieux si hors-ligne */ });
 
     // Show splash for 2 seconds then fade out
     const fadeTimer = setTimeout(() => setSplashFading(true), 1800);
@@ -128,8 +163,7 @@ export default function App() {
 
   // Refresh applied tweaks count on page change
   useEffect(() => {
-    const count = parseInt(localStorage.getItem("kermouk_tweaks_count") || "0");
-    setAppliedTweaksCount(count);
+    setAppliedTweaksCount(getActiveTweaksCount());
   }, [state.currentPage]);
 
   const changeTheme = useCallback((t: Theme) => {
@@ -151,11 +185,39 @@ export default function App() {
   }, []);
 
   const onLicenseActivated = useCallback((key: string) => {
-    setState((s) => ({ ...s, isPremium: true, licenseKey: key, showLicenseModal: false }));
+    setState((s) => ({
+      ...s,
+      isPremium: true,
+      licenseKey: key,
+      showLicenseModal: false,
+      supabaseProfile: s.supabaseProfile ? { ...s.supabaseProfile, is_premium: true } : s.supabaseProfile,
+    }));
   }, []);
 
   const onLicenseRemoved = useCallback(() => {
     setState((s) => ({ ...s, isPremium: false, licenseKey: null }));
+  }, []);
+
+  const onAuthenticated = useCallback((user: { id: string; email: string }, profile: SupabaseProfile) => {
+    setState((s) => ({
+      ...s,
+      supabaseUser: user,
+      supabaseProfile: profile,
+      isPremium: s.isPremium || profile.is_premium,
+    }));
+  }, []);
+
+  const onLogout = useCallback(() => {
+    setState((s) => ({
+      ...s,
+      supabaseUser: null,
+      supabaseProfile: null,
+      isPremium: !!s.licenseKey,
+    }));
+  }, []);
+
+  const onPremiumUnlocked = useCallback(() => {
+    setState((s) => (!s.isPremium ? { ...s, isPremium: true } : s));
   }, []);
 
   const pageProps = { isPremium: state.isPremium, openLicenseModal };
@@ -164,19 +226,15 @@ export default function App() {
     const key = state.currentPage;
     let content: React.ReactNode;
     switch (key) {
-      case "dashboard":          content = <Dashboard {...pageProps} />; break;
-      case "network":            content = <NetworkTweaks {...pageProps} />; break;
-      case "system":             content = <SystemTweaks {...pageProps} />; break;
-      case "gpu":                content = <GpuTweaks {...pageProps} />; break;
-      case "fortnite":           content = <FortniteTweaks {...pageProps} />; break;
-      case "fortnite-advanced":  content = <FortniteAdvanced {...pageProps} />; break;
-      case "bios":               content = <BiosTweaks {...pageProps} />; break;
-      case "overclock":          content = <OverclockTweaks {...pageProps} />; break;
-      case "inputlag":           content = <InputLagCalculator {...pageProps} />; break;
-      case "benchmark":          content = <Benchmark {...pageProps} />; break;
-      case "gameprofiles":       content = <GameProfiles {...pageProps} />; break;
-      case "cleaner":            content = <Cleaner {...pageProps} />; break;
-      case "gpo":                content = <GpoTweaks {...pageProps} />; break;
+      case "home":      content = <Dashboard {...pageProps} />; break;
+      case "backups":   content = <BackupsPage {...pageProps} />; break;
+      case "fixes":     content = <FixesPage {...pageProps} />; break;
+      case "general":   content = <GeneralPage {...pageProps} />; break;
+      case "hardware":  content = <HardwarePage {...pageProps} />; break;
+      case "debloat":   content = <DebloatPage {...pageProps} />; break;
+      case "network":   content = <NetworkTweaks {...pageProps} />; break;
+      case "prelaunch": content = <PreLaunch {...pageProps} />; break;
+      case "advanced":  content = <AdvancedPage {...pageProps} />; break;
       case "about":
         content = (
           <About
@@ -187,6 +245,18 @@ export default function App() {
             theme={theme}
             onThemeChange={changeTheme}
           />
+        );
+        break;
+      case "account":
+        content = state.supabaseUser && state.supabaseProfile ? (
+          <AccountPage
+            user={state.supabaseUser}
+            profile={state.supabaseProfile}
+            onLogout={onLogout}
+            onPremiumUnlocked={onPremiumUnlocked}
+          />
+        ) : (
+          <AuthPage onAuthenticated={onAuthenticated} />
         );
         break;
       default: content = <Dashboard {...pageProps} />;
@@ -209,6 +279,7 @@ export default function App() {
           isPremium={state.isPremium}
           onNavigate={navigate}
           onUnlockPremium={openLicenseModal}
+          supabaseUser={state.supabaseUser}
         />
         <div className="content">{renderPage()}</div>
         <StatusBar isPremium={state.isPremium} appliedTweaksCount={appliedTweaksCount} />
