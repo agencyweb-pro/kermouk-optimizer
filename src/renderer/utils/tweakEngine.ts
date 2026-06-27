@@ -1174,6 +1174,93 @@ export const PREMIUM_TWEAKS: Tweak[] = [
     ],
     commands: [],
   },
+  // ── GAMING FPS — Nouveaux tweaks haute priorité ────────────────────────────────
+  {
+    id: "spectre-meltdown-off",
+    name: "Désactiver Mitigations Spectre/Meltdown",
+    description: "Désactive les mitigations Spectre v2 et Meltdown (FeatureSettingsOverride=3) — gain CPU de 5 à 15% sur Intel 10ème gen (i5-10300H), surtout sur jeux CPU-bound comme Fortnite.",
+    category: "premium",
+    warning: "RISQUE SÉCURITÉ — Réduit la protection contre les exploits bas niveau CPU. Acceptable sur un PC gaming dédié non utilisé pour des tâches sensibles (banque, entreprise). Ne jamais activer sur un PC professionnel ou partagé.",
+    registryCommands: [
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management" /v "FeatureSettingsOverride" /t REG_DWORD /d 3 /f',
+      'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management" /v "FeatureSettingsOverrideMask" /t REG_DWORD /d 3 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "disable-wsearch",
+    name: "Désactiver Windows Search (WSearch)",
+    description: "Désactive le service d'indexation Windows Search (WSearch) qui scanne en permanence le disque en arrière-plan — libère I/O et CPU, réduit les stutters au démarrage de Fortnite.",
+    category: "premium",
+    warning: "La barre de recherche Windows Démarrer ne retournera plus les fichiers locaux instantanément. Réactivez si vous utilisez fréquemment la recherche de fichiers.",
+    serviceCommands: [
+      "sc stop WSearch",
+      "sc config WSearch start=disabled",
+    ],
+    commands: [],
+  },
+  {
+    id: "fortnite-process-priority",
+    name: "Priorité Processus Auto Fortnite (IFEO)",
+    description: "Configure Image File Execution Options pour que FortniteClient-Win64-Shipping.exe démarre automatiquement en priorité élevée sans action manuelle — réduit les freezes liés au scheduler Windows.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\FortniteClient-Win64-Shipping.exe\\PerfOptions" /v "CpuPriorityClass" /t REG_DWORD /d 3 /f',
+      'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\FortniteClient-Win64-Shipping.exe\\PerfOptions" /v "IoPriority" /t REG_DWORD /d 3 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "defender-fortnite-exclusion",
+    name: "Exclusion Defender — Fortnite + EAC",
+    description: "Ajoute FortniteClient-Win64-Shipping.exe et EasyAntiCheat aux exclusions Windows Defender — supprime le scan antivirus en temps réel sur ces exécutables, réduit les stutters CPU en jeu sans désactiver la protection globale.",
+    category: "premium",
+    powershellCommands: [
+      "Add-MpPreference -ExclusionProcess 'FortniteClient-Win64-Shipping.exe' -ErrorAction SilentlyContinue",
+      "Add-MpPreference -ExclusionProcess 'EasyAntiCheat.exe' -ErrorAction SilentlyContinue",
+      "Add-MpPreference -ExclusionProcess 'EasyAntiCheat_launcher.exe' -ErrorAction SilentlyContinue",
+      "$fn = (Get-ChildItem 'C:\\Users' -Recurse -Filter 'FortniteClient-Win64-Shipping.exe' -ErrorAction SilentlyContinue | Select-Object -First 1).DirectoryName; if ($fn) { Add-MpPreference -ExclusionPath $fn -ErrorAction SilentlyContinue }",
+    ],
+    commands: [],
+  },
+  {
+    id: "disable-nvidia-container",
+    name: "Désactiver Services Fond NVIDIA (Container)",
+    description: "Désactive NvContainerLocalSystem et NvContainerNetworkService — services NVIDIA qui tournent en permanence pour GeForce Experience, télémétrie et overlay. Libère 50-100 MB RAM et réduit la charge CPU en fond.",
+    category: "premium",
+    warning: "Désactive GeForce Experience (overlay, ShadowPlay, optimisation de jeux). Le pilote GPU reste pleinement fonctionnel — seule l'interface GFE est inaccessible.",
+    serviceCommands: [
+      "sc stop NVDisplay.ContainerLocalSystem",
+      "sc config NVDisplay.ContainerLocalSystem start=demand",
+      "sc stop NvContainerNetworkService",
+      "sc config NvContainerNetworkService start=demand",
+      "sc stop NvTelemetryContainer",
+      "sc config NvTelemetryContainer start=disabled",
+    ],
+    commands: [],
+  },
+  {
+    id: "windows-game-mode-on",
+    name: "Activer Game Mode Windows",
+    description: "Active le Game Mode Windows natif (AutoGameModeEnabled=1) — Windows déprioritise les tâches en arrière-plan (mises à jour, indexation) automatiquement dès qu'un jeu plein écran est détecté.",
+    category: "premium",
+    registryCommands: [
+      'reg add "HKCU\\Software\\Microsoft\\GameBar" /v "AutoGameModeEnabled" /t REG_DWORD /d 1 /f',
+      'reg add "HKCU\\Software\\Microsoft\\GameBar" /v "AllowAutoGameMode" /t REG_DWORD /d 1 /f',
+      'reg add "HKCU\\Software\\Microsoft\\GameBar" /v "UseNexusForGameBarEnabled" /t REG_DWORD /d 0 /f',
+    ],
+    commands: [],
+  },
+  {
+    id: "irq-gpu-priority",
+    name: "Priorité IRQ GPU (Boost Interruptions)",
+    description: "Configure le GPU pour que ses interruptions matérielles soient traitées en priorité absolue (MessageSignaledInterruptProperties) — réduit la latence de rendu d'1 à 3ms sur cartes NVIDIA.",
+    category: "premium",
+    powershellCommands: [
+      '$gpu = Get-PnpDevice | Where-Object { $_.Class -eq "Display" -and $_.Status -eq "OK" } | Select-Object -First 1; if ($gpu) { $path = "HKLM:\\SYSTEM\\CurrentControlSet\\Enum\\" + $gpu.InstanceId + "\\Device Parameters\\Interrupt Management\\MessageSignaledInterruptProperties"; if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }; Set-ItemProperty -Path $path -Name "MSISupported" -Value 1 -Type DWord -ErrorAction SilentlyContinue }',
+    ],
+    commands: [],
+  },
 ];
 
 export function generateBatScript(tweaks: Tweak[]): string {
