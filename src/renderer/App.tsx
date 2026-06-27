@@ -1,22 +1,24 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { getActiveTweaksCount } from "./utils/tweakStore";
 import Sidebar from "./components/Sidebar";
 import TitleBar from "./components/TitleBar";
 import LicenseModal from "./components/LicenseModal";
 import SplashScreen from "./components/SplashScreen";
 import StatusBar from "./components/StatusBar";
-import Dashboard from "./pages/Dashboard";
-import NetworkTweaks from "./pages/NetworkTweaks";
-import PreLaunch from "./pages/PreLaunch";
-import About from "./pages/About";
-import AuthPage from "./pages/AuthPage";
-import AccountPage from "./pages/AccountPage";
-import BackupsPage from "./pages/BackupsPage";
-import FixesPage from "./pages/FixesPage";
-import GeneralPage from "./pages/GeneralPage";
-import HardwarePage from "./pages/HardwarePage";
-import DebloatPage from "./pages/DebloatPage";
-import AdvancedPage from "./pages/AdvancedPage";
+
+// Chargement différé — chaque page est chargée seulement à la première visite
+const Dashboard    = lazy(() => import("./pages/Dashboard"));
+const NetworkTweaks = lazy(() => import("./pages/NetworkTweaks"));
+const PreLaunch    = lazy(() => import("./pages/PreLaunch"));
+const About        = lazy(() => import("./pages/About"));
+const AuthPage     = lazy(() => import("./pages/AuthPage"));
+const AccountPage  = lazy(() => import("./pages/AccountPage"));
+const BackupsPage  = lazy(() => import("./pages/BackupsPage"));
+const FixesPage    = lazy(() => import("./pages/FixesPage"));
+const GeneralPage  = lazy(() => import("./pages/GeneralPage"));
+const HardwarePage = lazy(() => import("./pages/HardwarePage"));
+const DebloatPage  = lazy(() => import("./pages/DebloatPage"));
+const AdvancedPage = lazy(() => import("./pages/AdvancedPage"));
 
 export interface SupabaseProfile {
   id: string;
@@ -268,9 +270,11 @@ export default function App() {
       default: content = <Dashboard {...pageProps} />;
     }
     return (
-      <div key={key} className="page-transition" style={{ height: "100%" }}>
-        {content}
-      </div>
+      <Suspense fallback={<div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#333", fontSize: "12px" }}>Chargement…</div>}>
+        <div key={key} className="page-transition" style={{ height: "100%" }}>
+          {content}
+        </div>
+      </Suspense>
     );
   };
 

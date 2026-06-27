@@ -138,6 +138,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     frame: false,
+    show: false, // afficher seulement quand le renderer est prêt
     backgroundColor: "#0a0a0a",
     icon: join(__dirname, "../../resources/icon.png"),
     webPreferences: {
@@ -157,15 +158,20 @@ function createWindow() {
     win.loadFile(join(__dirname, "../renderer/index.html"));
   }
 
+  // Afficher + démarrer monitoring seulement quand le renderer est peint
+  win.once("ready-to-show", () => {
+    win.show();
+    startMonitoring(win);
+    initAutoUpdater(win);
+  });
+
   return win;
 }
 
 app.whenReady().then(() => {
   if (!fs.existsSync(SCRIPTS_DIR)) fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
 
-  const win = createWindow();
-  startMonitoring(win);
-  initAutoUpdater(win);
+  createWindow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -41,7 +41,7 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
   const [reportLoading, setReportLoading] = useState(false);
   const [reportContent, setReportContent] = useState<string | null>(null);
   const [reportFolder, setReportFolder] = useState("");
-  const tweaksCount = getActiveTweaksCount();
+  const [tweaksCount, setTweaksCount] = useState(() => getActiveTweaksCount());
 
   // Quickstart checklist states (basés sur localStorage)
   const backupsCount = (() => {
@@ -68,7 +68,6 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
   const currentVersion = __APP_VERSION__;
 
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const hwIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     window.kermouk?.getSystemInfo().then((info) => {
@@ -76,13 +75,10 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
       setLoading(false);
     });
 
-    const fetchHw = () => {
-      window.kermouk?.getHardwareMonitor().then((data) => {
-        setHw(data as HardwareMonitor);
-      });
-    };
-    fetchHw();
-    hwIntervalRef.current = setInterval(fetchHw, 4000);
+    // Écoute hw-alert du main process au lieu de spawner un interval dupliqué
+    const removeHwListener = window.kermouk?.onHwAlert?.((data) => {
+      setHw(data as HardwareMonitor);
+    });
 
     const fetchPing = () => {
       setPingLoading(true);
@@ -102,13 +98,13 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
       if (payload.message) setUpdateError(payload.message as string);
     });
 
-    // Déclenche une vérification auto 12s après le montage (laisser l'app s'initialiser)
+    // Vérification auto 12s après le montage
     const updateTimer = setTimeout(() => {
       window.kermouk?.checkForUpdates?.().catch(() => {});
     }, 12000);
 
     return () => {
-      if (hwIntervalRef.current) clearInterval(hwIntervalRef.current);
+      removeHwListener?.();
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       clearTimeout(updateTimer);
       removeUpdateListener?.();
@@ -148,6 +144,7 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
     if (result.ok) {
       const prev = parseInt(localStorage.getItem("kermouk_tweaks_count") || "0");
       localStorage.setItem("kermouk_tweaks_count", String(prev + ALL_FREE.length));
+      setTweaksCount(getActiveTweaksCount());
       setModeDone(`✓ Mode Gaming actif — ${ALL_FREE.length} tweaks appliqués !`);
     } else {
       setModeDone("✗ Erreur — vérifiez la fenêtre UAC.");
@@ -168,6 +165,7 @@ export default function Dashboard({ isPremium, openLicenseModal }: DashboardProp
     if (result.ok) {
       const prev = parseInt(localStorage.getItem("kermouk_tweaks_count") || "0");
       localStorage.setItem("kermouk_tweaks_count", String(prev + tweaksToApply.length));
+      setTweaksCount(getActiveTweaksCount());
       await window.kermouk.applyFortniteIni();
       setModeDone(`Mode Tournoi actif — ${tweaksToApply.length} tweaks + INI Fortnite !`);
     } else {
