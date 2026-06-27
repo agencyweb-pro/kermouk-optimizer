@@ -1,6 +1,6 @@
 {
   "name": "kermouk-optimizer-desktop",
-  "version": "3.0.1",
+  "version": "3.2.0",
   "description": "KERMOUK OPTIMIZER — Gaming Optimizer pour Fortnite",
   "main": "out/main/index.js",
   "scripts": {
