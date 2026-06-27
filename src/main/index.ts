@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, Notification } from "electron";
+import { app, BrowserWindow, ipcMain, shell, Notification, session } from "electron";
 import { autoUpdater } from "electron-updater";
 import { join } from "path";
 import { exec } from "child_process";
@@ -8,6 +8,7 @@ import * as os from "os";
 import * as crypto from "crypto";
 import Store from "electron-store";
 import { createClient } from "@supabase/supabase-js";
+import si from "systeminformation";
 import { createBackup, listBackups, restoreBackup, deleteBackup, hasAutoBackupToday } from "./backup";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const WS = require("ws");
@@ -17,6 +18,9 @@ if (!globalThis.WebSocket) (globalThis as Record<string, unknown>).WebSocket = W
 const execAsync = promisify(exec);
 
 let autoBackupTriggeredThisSession = false;
+
+// Cache sysInfo — une seule détection au démarrage
+let cachedSysInfo: Record<string, string> | null = null;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const store = new Store<Record<string, any>>();
@@ -146,7 +150,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      webSecurity: false,
+      webSecurity: true,
     },
   });
 
@@ -170,6 +174,18 @@ function createWindow() {
 
 app.whenReady().then(() => {
   if (!fs.existsSync(SCRIPTS_DIR)) fs.mkdirSync(SCRIPTS_DIR, { recursive: true });
+
+  // CSP renforcé côté session (s'ajoute au meta tag de index.html)
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.github.com ws://localhost:* http://localhost:*; img-src 'self' data: https:;"
+        ],
+      },
+    });
+  });
 
   createWindow();
 
@@ -353,43 +369,32 @@ ipcMain.handle("auth-check-session", async () => {
   }
 });
 
-// ─── IPC: System info ───────────────────────────────────────────────────────
+// ─── IPC: System info (avec cache — une seule détection) ────────────────────
 ipcMain.handle("get-system-info", async () => {
+  if (cachedSysInfo) return cachedSysInfo;
   try {
-    const { stdout: cpuOut } = await execAsync(
-      'wmic cpu get Name,NumberOfCores,MaxClockSpeed /format:csv'
+    const [cpu, mem, graphics, osInfo] = await Promise.all([
+      si.cpu(),
+      si.mem(),
+      si.graphics(),
+      si.osInfo(),
+    ]);
+    const gpu = graphics.controllers.find(
+      (c) => !c.vendor?.toLowerCase().includes("microsoft")
     );
-    const { stdout: ramOut } = await execAsync('wmic OS get TotalVisibleMemorySize /format:csv');
-    const { stdout: gpuOut } = await execAsync('wmic path win32_VideoController get Name /format:csv');
-    const { stdout: osOut } = await execAsync('wmic os get Caption,Version /format:csv');
-
-    const parseCsv = (out: string) =>
-      out.trim().split("\n").filter(l => l.trim() && !l.startsWith("Node")).map(l => l.split(",").map(s => s.trim()));
-
-    const cpuLines = parseCsv(cpuOut);
-    const ramLines = parseCsv(ramOut);
-    const gpuLines = parseCsv(gpuOut);
-    const osLines = parseCsv(osOut);
-
-    const cpuName = cpuLines[0]?.[2] || "Inconnu";
-    const cpuCores = cpuLines[0]?.[1] || "?";
-    const ramKb = parseInt(ramLines[0]?.[1] || "0");
-    const ramGb = Math.round(ramKb / 1024 / 1024);
-    const gpuName = gpuLines.filter(l => l[1] && !l[1].includes("Microsoft Basic")).map(l => l[1])[0] || "Inconnu";
-    const osName = osLines[0]?.[1] || os.version();
-
-    return {
-      cpu: `${cpuName} (${cpuCores} cœurs)`,
-      ram: `${ramGb} GB`,
-      gpu: gpuName,
-      os: osName,
-      platform: os.platform(),
-      arch: os.arch(),
+    cachedSysInfo = {
+      cpu: `${cpu.brand} (${cpu.cores} cœurs)`,
+      ram: `${Math.round(mem.total / 1073741824)} GB`,
+      gpu: gpu?.model || "Inconnu",
+      os: `${osInfo.distro} ${osInfo.release}`,
+      platform: osInfo.platform,
+      arch: osInfo.arch,
     };
+    return cachedSysInfo;
   } catch {
     return {
       cpu: os.cpus()[0]?.model || "Inconnu",
-      ram: `${Math.round(os.totalmem() / 1024 / 1024 / 1024)} GB`,
+      ram: `${Math.round(os.totalmem() / 1073741824)} GB`,
       gpu: "Inconnu",
       os: os.version(),
       platform: os.platform(),
@@ -528,51 +533,37 @@ ipcMain.handle("reboot-to-bios", async () => {
   }
 });
 
-// ─── IPC: Hardware monitor ───────────────────────────────────────────────────
+// ─── IPC: Hardware monitor (systeminformation — pas de spawn PowerShell) ────
 ipcMain.handle("get-hardware-monitor", async () => {
-  const script = `
-$ErrorActionPreference = 'SilentlyContinue'
-$cpuObj = Get-WmiObject Win32_Processor | Select-Object -First 1
-$cpu = [int]((Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average)
-$freq = [int]$cpuObj.CurrentClockSpeed
-$cpuName = [string]$cpuObj.Name
-$ramObj = Get-WmiObject Win32_OperatingSystem
-$ramUsed = [int][math]::Round(($ramObj.TotalVisibleMemorySize - $ramObj.FreePhysicalMemory) / $ramObj.TotalVisibleMemorySize * 100)
-$ramTotalGb = [math]::Round($ramObj.TotalVisibleMemorySize / 1048576, 1)
-$ramUsedGb  = [math]::Round(($ramObj.TotalVisibleMemorySize - $ramObj.FreePhysicalMemory) / 1048576, 1)
-$cpuTemp = -1
-try {
-  $tz = Get-WmiObject MSAcpi_ThermalZoneTemperature -Namespace root/wmi | Select-Object -First 1
-  if ($tz) { $cpuTemp = [int][math]::Round(($tz.CurrentTemperature / 10) - 273.15) }
-} catch {}
-$gpuTemp = -1
-$gpuUsage = -1
-try { $gpuTemp = [int]((& nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits 2>$null).Trim()) } catch {}
-try { $gpuUsage = [int]((& nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>$null).Trim()) } catch {}
-$gpuObj = Get-WmiObject Win32_VideoController | Where-Object { $_.Name -notlike '*Microsoft*' } | Select-Object -First 1
-$gpuName = if ($gpuObj) { [string]$gpuObj.Name } else { 'Inconnu' }
-$gpuIsNvidia = ($gpuName -match 'NVIDIA')
-$cpuIsIntel = ($cpuName -match 'Intel')
-@{
-  cpuUsage   = $cpu
-  cpuTemp    = $cpuTemp
-  cpuFreq    = $freq
-  gpuTemp    = $gpuTemp
-  gpuUsage   = $gpuUsage
-  ramUsage   = $ramUsed
-  ramTotalGb = $ramTotalGb
-  ramUsedGb  = $ramUsedGb
-  gpuName    = $gpuName
-  gpuIsNvidia = [bool]$gpuIsNvidia
-  cpuName    = $cpuName
-  cpuIsIntel = [bool]$cpuIsIntel
-} | ConvertTo-Json
-`;
   try {
-    const out = await runPs1(script, false, 8000);
-    return JSON.parse(out);
+    const [load, temp, mem, graphics, cpu] = await Promise.all([
+      si.currentLoad(),
+      si.cpuTemperature(),
+      si.mem(),
+      si.graphics(),
+      si.cpu(),
+    ]);
+    const gpu = graphics.controllers.find(
+      (c) => !c.vendor?.toLowerCase().includes("microsoft")
+    );
+    const ramTotalGb = Math.round(mem.total / 1073741824 * 10) / 10;
+    const ramUsedGb  = Math.round(mem.used  / 1073741824 * 10) / 10;
+    return {
+      cpuUsage:    Math.round(load.currentLoad),
+      cpuTemp:     Math.round(temp.main) || -1,
+      cpuFreq:     0,
+      gpuTemp:     gpu?.temperatureGpu  ?? -1,
+      gpuUsage:    gpu?.utilizationGpu  ?? -1,
+      ramUsage:    Math.round(mem.used / mem.total * 100),
+      ramTotalGb,
+      ramUsedGb,
+      gpuName:     gpu?.model           || "Inconnu",
+      gpuIsNvidia: gpu?.vendor?.toLowerCase().includes("nvidia") ?? false,
+      cpuName:     cpu.brand,
+      cpuIsIntel:  cpu.manufacturer?.toLowerCase().includes("intel") ?? false,
+    };
   } catch {
-    return { cpuUsage: 0, cpuTemp: -1, cpuFreq: 0, gpuTemp: -1, gpuUsage: -1, ramUsage: 0, gpuName: "Inconnu", gpuIsNvidia: false, cpuName: "Inconnu", cpuIsIntel: true };
+    return { cpuUsage: 0, cpuTemp: -1, cpuFreq: 0, gpuTemp: -1, gpuUsage: -1, ramUsage: 0, ramTotalGb: 0, ramUsedGb: 0, gpuName: "Inconnu", gpuIsNvidia: false, cpuName: "Inconnu", cpuIsIntel: true };
   }
 });
 
@@ -1174,47 +1165,36 @@ ipcMain.handle("install-update", () => {
   } catch { /* silencieux */ }
 });
 
-// ─── Background: Smart monitoring — CPU/RAM every 5s, temp every 15s ─────────
+// ─── Background: Smart monitoring — si every 5s, temp every 15s (pas de wmic) ─
 function startMonitoring(win: BrowserWindow) {
   let tickCount = 0;
   let lastTemp = -1;
-  let tempPolling = false;
 
   setInterval(async () => {
     if (!notificationsEnabled) return;
     tickCount++;
 
     try {
-      // Fast wmic poll every 5s
-      const { stdout: cpuOut } = await execAsync("wmic cpu get LoadPercentage /value", { timeout: 3000 });
-      const { stdout: ramOut } = await execAsync("wmic OS get TotalVisibleMemorySize,FreePhysicalMemory /value", { timeout: 3000 });
+      const [load, mem] = await Promise.all([si.currentLoad(), si.mem()]);
+      const cpu = Math.round(load.currentLoad);
+      const ram = Math.round(mem.used / mem.total * 100);
 
-      const cpu = parseInt(cpuOut.match(/LoadPercentage=(\d+)/)?.[1] ?? "0");
-      const totalKb = parseInt(ramOut.match(/TotalVisibleMemorySize=(\d+)/)?.[1] ?? "1");
-      const freeKb = parseInt(ramOut.match(/FreePhysicalMemory=(\d+)/)?.[1] ?? "0");
-      const ram = Math.round((totalKb - freeKb) / totalKb * 100);
+      // Température CPU toutes les 15s (chaque 3ème tick)
+      if (tickCount % 3 === 0) {
+        si.cpuTemperature().then((t) => {
+          lastTemp = Math.round(t.main) || -1;
+        }).catch(() => {});
+      }
 
-      // Detect Fortnite running
+      // Détection Fortnite (tasklist ciblé — rapide)
       let fortniteRunning = false;
       try {
-        const { stdout: tasks } = await execAsync('tasklist /FI "IMAGENAME eq FortniteClient-Win64-Shipping.exe" /FO CSV /NH', { timeout: 2000 });
+        const { stdout: tasks } = await execAsync(
+          'tasklist /FI "IMAGENAME eq FortniteClient-Win64-Shipping.exe" /FO CSV /NH',
+          { timeout: 2000 }
+        );
         fortniteRunning = tasks.includes("FortniteClient");
       } catch { /* ignore */ }
-
-      // Temperature via PS1 WMI every 15s (every 3rd tick), non-concurrent
-      if (tickCount % 3 === 0 && !tempPolling) {
-        tempPolling = true;
-        runPs1(
-          `$ErrorActionPreference='SilentlyContinue'
-$t=-1
-try{$tz=Get-WmiObject MSAcpi_ThermalZoneTemperature -Namespace root/wmi|Select-Object -First 1;if($tz){$t=[int][math]::Round(($tz.CurrentTemperature/10)-273.15)}}catch{}
-Write-Host $t`,
-          false, 5000
-        ).then((out) => {
-          lastTemp = parseInt(out.trim()) || -1;
-          tempPolling = false;
-        }).catch(() => { tempPolling = false; });
-      }
 
       const data = { cpu, ram, cpuTemp: lastTemp, disk: -1, fortniteRunning };
 
