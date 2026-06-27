@@ -1176,8 +1176,10 @@ function startMonitoring(win: BrowserWindow) {
 
     try {
       const [load, mem] = await Promise.all([si.currentLoad(), si.mem()]);
-      const cpu = Math.round(load.currentLoad);
-      const ram = Math.round(mem.used / mem.total * 100);
+      const cpuUsage = Math.round(load.currentLoad);
+      const ramUsage = Math.round(mem.used / mem.total * 100);
+      const ramTotalGb = Math.round(mem.total / 1073741824 * 10) / 10;
+      const ramUsedGb = Math.round(mem.used / 1073741824 * 10) / 10;
 
       // Température CPU toutes les 15s (chaque 3ème tick)
       if (tickCount % 3 === 0) {
@@ -1196,7 +1198,7 @@ function startMonitoring(win: BrowserWindow) {
         fortniteRunning = tasks.includes("FortniteClient");
       } catch { /* ignore */ }
 
-      const data = { cpu, ram, cpuTemp: lastTemp, disk: -1, fortniteRunning };
+      const data = { cpuUsage, ramUsage, ramTotalGb, ramUsedGb, cpuTemp: lastTemp, gpuUsage: -1, gpuTemp: -1, fortniteRunning };
 
       if (ram > 90) {
         new Notification({
