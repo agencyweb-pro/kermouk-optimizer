@@ -1,7 +1,6 @@
 "use client";
 
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
-import { v4 as uuidv4 } from "uuid";
 
 interface PayPalCheckoutProps {
   plan: "monthly" | "lifetime";
@@ -51,22 +50,30 @@ export default function PayPalCheckout({ plan, onSuccess }: PayPalCheckoutProps)
         onApprove={async (_data, actions) => {
           if (!actions.order) return;
           const order = await actions.order.capture();
-          console.log("Paiement validé:", order);
+          if (!order.id) {
+            alert("Erreur lors de la capture du paiement.");
+            return;
+          }
 
-          const licenseKey = uuidv4();
-          const licenseData = {
-            key: licenseKey,
-            plan,
-            orderId: order.id,
-            purchaseDate: new Date().toISOString(),
-            email: order.payer?.email_address || "",
-          };
+          const res = await fetch("/api/paypal/capture", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderId: order.id, plan }),
+          });
 
-          localStorage.setItem("kermouk_license", JSON.stringify(licenseData));
-          console.log("Email de confirmation simulé à:", order.payer?.email_address);
-          console.log("Clé de licence générée:", licenseKey);
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.error("Erreur serveur:", err);
+            alert("Paiement reçu mais erreur lors de la création de la licence. Contactez le support.");
+            return;
+          }
 
-          onSuccess(licenseKey);
+          const { key } = await res.json();
+          localStorage.setItem(
+            "kermouk_license",
+            JSON.stringify({ key, plan, orderId: order.id, purchaseDate: new Date().toISOString() })
+          );
+          onSuccess(key);
         }}
         onError={(err) => {
           console.error("Erreur PayPal:", err);
